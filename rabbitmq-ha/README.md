@@ -1,4 +1,4 @@
-
+# kubernetes 部署rabbitmq集群
 
 # 1 存储卷准备
 
