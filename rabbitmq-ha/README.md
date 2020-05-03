@@ -72,5 +72,3 @@ rabbitmq   NodePort   10.101.152.206   <none>        15672:31672/TCP,5672:30672/
 
 登陆验证：`节点IP:31672`        账户密码：guest/guest
 
-![0](0.png)
-
