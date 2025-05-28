@@ -1,0 +1,65 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-preferred
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      ctlr: redis-preferred
+  template:
+    metadata:
+      labels:     # Redis Pod的标签，它也将是demoapp Pod亲和关系依赖的关键要素
+        app: redis
+        ctlr: redis-preferred
+    spec:
+      containers:
+      - name: redis    # 资源请求，用于影响节点的可承载Pod数量
+        image: redis:6.0-alpine
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-affinity-preferred
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: demoapp
+      ctlr: pod-affinity-preferred
+  template:
+    metadata:
+      labels:
+        app: demoapp
+        ctlr: pod-affinity-preferred
+    spec:
+      containers:
+      - name: demoapp
+        image: vvoo/demoapp:v1.0
+        resources:
+          requests:
+            cpu: 1500m
+            memory: 1Gi
+      affinity:            # Pod亲和关系定义
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100    # 最大权重的亲和条件
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - {key: app, operator: In, values: ["redis"]}
+                - {key: ctlr, operator: In, values: ["redis-prefered"]}
+              topologyKey: kubernetes.io/hostname    # 确定节点位置拓扑的标签
+          - weight: 50     # 第二权重的亲和条件
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - {key: app, operator: In, values: ["redis"]}
+                - {key: ctlr, operator: In, values: ["redis-prefered"]}
+              topologyKey: rack    # 确定节点位置拓扑的第二标签，扩大了前一条件位置范围

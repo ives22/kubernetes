@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-with-resource
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pod-resource 
+  template:
+    metadata:
+      labels:
+        app: pod-resource
+    spec:
+      containers:
+      - name: nginx
+        image: harbor.ik8s.cn/my_pro/nginx
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 80
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+          limits:
+            cpu: 1
+            memory: 500Mi

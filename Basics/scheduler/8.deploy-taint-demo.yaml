@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-taint-demo-pod
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: demoapp
+  template:
+    metadata:
+      labels:
+        app: demoapp
+    spec:
+      containers:
+      - name: demoapp
+        image: vvoo/demoapp:v1.0
+        ports:
+        - name:
+          containerPort: 80
+      tolerations:
+      # 下面的容忍度表示，容忍节点污点信息为：node-type=production:NoExecute
+      - key: "node-type"
+        operator: "Equal"
+        value: "production"
+        effect: "NoExecute"
+        tolerationSeconds: 30

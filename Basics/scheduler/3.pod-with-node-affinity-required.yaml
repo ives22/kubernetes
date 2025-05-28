@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-node-affinity-required
+spec:
+  containers:
+  - name: with-node-required-affinity
+    image: vvoo/demoapp:v1.0
+
+  # 下面这段配置，所应用的规则如下：
+  # 1、节点必须具有一个 "gpu" 的标签，不论其标签是否有值；
+  # 2、且节点不能存在名为 "node-role.kubernetes.io/master" 的标签。
+  affinity:
+    nodeAffinity: 
+      requiredDuringSchedulingIgnoredDuringExecution: # 节点硬亲和，必须满足
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: gpu
+            operator: Exists
+          - key: node-role.kubernetes.io/master 
+            operator: DoesNotExist
+            

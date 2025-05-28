@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-with-nodeselector
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demoapp
+      type: nodeselector
+  template:
+    metadata:
+      labels:
+        app: demoapp
+        type: nodeselector
+    spec:
+      containers:
+      - name: demoapp
+        image: harbor.ik8s.cn/my_pro/demoapp:v1.0
+      nodeSelector:
+        disktype: ssd

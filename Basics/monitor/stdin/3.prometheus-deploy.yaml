@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: kube-vm
+spec:
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - image:  prom/prometheus:v2.50.0
+        name:  prometheus
+        args:
+          - "--config.file=/etc/prometheus/prometheus.yaml"  # 指定配置文件路径
+          - "--storage.tsdb.path=/prometheus"  # 指定数据存储路径
+          - "--storage.tsdb.retention.time=10d"  # 数据保存天数，默认15天
+          - "--web.enable-lifecycle" # 支持热更新，后续通过 localhost:9090/-/reload 立即生效
+        ports:
+          - name: http
+            containerPort: 9090
+        securityContext: 
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /prometheus
+          name: data
+        - mountPath: "/etc/prometheus"
+          name: config
+      volumes:
+        - name: data
+          persistentVolumeClaim: 
+            claimName: prometheus-data
+        - name: config
+          configMap:
+            name: prometheus-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: kube-vm
+spec:
+  selector:
+    app: prometheus
+  type: NodePort
+  ports:
+    - name: web
+      port: 9090
+      targetPort: http

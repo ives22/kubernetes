@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victoria-metrics
+  namespace: kube-vm
+spec:
+  selector:
+    matchLabels:
+      app: victoria-metrics
+  template:
+    metadata:
+      labels:
+        app: victoria-metrics
+    spec:
+      containers:
+        - name: vm
+          image: victoriametrics/victoria-metrics:v1.102.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - -storageDataPath=/var/lib/victoria-metrics-data
+            - -retentionPeriod=10d
+            - -promscrape.config=/etc/prometheus/prometheus.yaml
+          ports:
+          - name: http-vm
+            containerPort: 8428
+            protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/victoria-metrics-data
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: victoria-metrics-data
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config

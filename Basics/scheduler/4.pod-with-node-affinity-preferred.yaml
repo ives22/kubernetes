@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-node-affinity-preferred
+spec:
+  containers:
+  - name: with-node-preferred-affinity
+    image: vvoo/demoapp:v1.0
+
+  # 下面这段配置，所应用的规则如下：
+  # 1、节点存在一个 "gpu" 的标签，权重为60
+  # 2、节点存在一个 "zone" 的标签，值为"foo" 或 "bar"，权重为30。
+  # 该资源会优先选择节点带有 gpu标签的节点，其次会选择带有zone标签值为"foo" 或 "bar"的节点，如果都没满足，也会选择其它节点。
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:   # 节点软亲和，优选
+        - weight: 60  # 权重为 60，表示这个条件的优先级较高
+          preference:
+            matchExpressions:
+            - key: gpu  # 节点标签的键，表示优先选择具有 "gpu" 标签的节点
+              operator: Exists  # 操作符 "Exists" 表示节点必须具有 "gpu" 这个标签键，无论标签值是什么
+        - weight: 30  # 权重为 30，表示这个条件的优先级较低
+          preference:
+            matchExpressions:
+            - key: zone  # 节点标签的键，表示优先选择位于特定 "zone" 的节点
+              operator: In  # 操作符 "In" 表示节点的 "zone" 标签值必须在给定的列表中
+              values: ["foo", "bar"]  # 指定的 "zone" 标签值列表，属于 "foo" 或 "bar"

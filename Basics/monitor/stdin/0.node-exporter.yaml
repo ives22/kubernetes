@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app.kubernetes.io/component: exporter
+    app.kubernetes.io/name: node-exporter
+    app.kubernetes.io/part-of: kube-vm
+    app.kubernetes.io/version: 1.8.2
+  name: node-exporter
+  namespace: kube-vm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: exporter
+      app.kubernetes.io/name: node-exporter
+      app.kubernetes.io/part-of: kube-vm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: exporter
+        app.kubernetes.io/name: node-exporter
+        app.kubernetes.io/part-of: kube-vm
+    spec:
+      containers:
+        - args:
+            - --web.listen-address=$(HOSTIP):9100
+            - --path.sysfs=/host/sys
+            - --path.rootfs=/host/root
+            - --path.procfs=/host/proc
+            - --path.udev.data=/host/root/run/udev/data
+            - --no-collector.wifi
+            - --no-collector.hwmon
+            - --no-collector.btrfs
+            - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/k3s/containerd/.+|var/lib/docker/.+|var/lib/kubelet/pods/.+)($|/)
+            - --collector.netclass.ignored-devices=^(veth.*|[a-f0-9]{15})$
+            - --collector.netdev.device-exclude=^(veth.*|[a-f0-9]{15})$
+          image: quay.io/prometheus/node-exporter:v1.6.0
+          name: node-exporter
+          env:
+            - name: HOSTIP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          resources:
+            limits:
+              cpu: 250m
+              memory: 180Mi
+            requests:
+              cpu: 102m
+              memory: 180Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+                - SYS_TIME
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /host/sys
+              mountPropagation: HostToContainer
+              name: sys
+              readOnly: true
+            - mountPath: /host/root
+              mountPropagation: HostToContainer
+              name: root
+              readOnly: true
+            - mountPath: /host/proc
+              name: proc
+              readOnly: true
+      hostNetwork: true
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      priorityClassName: system-cluster-critical
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+      volumes:
+        - hostPath:
+            path: /sys
+          name: sys
+        - hostPath:
+            path: /
+          name: root
+        - hostPath:
+            path: /proc
+          name: proc
