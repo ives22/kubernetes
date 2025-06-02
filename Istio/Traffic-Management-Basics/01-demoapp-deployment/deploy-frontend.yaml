@@ -26,7 +26,7 @@ spec:
         - name: "PORT"
           value: "5901"
         - name: "PROXY_VERSION"
-          value: "v1.0"
+          value: "v1.1"
         ports:
         - containerPort: 5901
           name: http
