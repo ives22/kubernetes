@@ -17,7 +17,7 @@ spec:
         version: v2.1
     spec:
       containers:
-      - image: vvoo/demoapp:v2.1
+      - image: vvoo/demoapp:v2.0
         imagePullPolicy: IfNotPresent
         name: demoapp
         env:

@@ -15,13 +15,14 @@
     - `VERSION`: v2.0
 
 - **Demoapp v2.1**
-  - 镜像: `vvoo/demoapp:v2.1`
+  - 镜像: `vvoo/demoapp:v2.0`
   - 部署: 2 个副本
   - 标签: `version: v2.1`
-  - 环境变量:
+  - 环境变量: 
     - `PORT`: 8080
     - `VERSION`: v2.1
 
+说明：demoapp程序通过VERSION可以控制程序运行的版本号。
 两个版本共用同一个 Service：`demoapp`，通过 Istio 的流量管理功能进行请求分发。
 
 ## Istio 流量管理配置
