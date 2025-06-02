@@ -1,6 +1,6 @@
-# Istio 流量管理 - 基于权重的流量分配示例
+# Istio 流量管理 - HTTP 请求头操作示例
 
-本示例演示了 Istio 的基于权重的流量分配功能（Weight-based Routing），通过为不同版本的服务分配不同的流量权重，实现精确的流量控制和灰度发布。
+本示例演示了 Istio 的 HTTP 请求头操作功能，包括基于请求头的路由、请求头修改和响应头添加等高级流量管理功能。通过这些功能，可以实现更精细的流量控制和用户体验定制。
 
 ## 应用架构
 
@@ -13,7 +13,6 @@
   - 环境变量:
     - `PORT`: 8080
     - `VERSION`: v2.0
-  - 流量权重: 70%
 
 - **Demoapp v2.1** (金丝雀版本)
   - 镜像: `vvoo/demoapp:v2.0` (使用相同镜像，通过环境变量区分版本)
@@ -22,27 +21,25 @@
   - 环境变量:
     - `PORT`: 8080
     - `VERSION`: v2.1
-  - 流量权重: 30%
 
 两个版本共用同一个 Service：`demoapp`，通过 Istio 的流量管理功能进行请求分发。
 
-![应用架构图](image.png)
+## HTTP 请求头操作功能说明
 
-## 基于权重的流量分配说明
+本示例实现了三种不同的 HTTP 请求头操作：
 
-基于权重的流量分配是一种常见的灰度发布（Canary Deployment）策略，具有以下特点：
+1. **基于请求头的路由**
+   - 当请求头中包含 `x-canary: true` 时，请求被路由到金丝雀版本（v2.1）
+   - 其他请求则路由到稳定版本（v2.0）
 
-1. **精确控制流量比例**
-   - 可以为每个服务版本设置精确的流量百分比
-   - 本示例中，70% 的流量路由到 v2.0 版本，30% 的流量路由到 v2.1 版本
+2. **请求头修改**
+   - 对于金丝雀版本的请求，将 `User-Agent` 请求头设置为 `Chrome`
+   - 这个修改对上游服务可见，但对客户端不可见
 
-2. **无需修改客户端**
-   - 客户端无需关心服务的不同版本
-   - 所有流量控制都在服务网格内部完成
-
-3. **灵活调整**
-   - 可以随时调整权重比例，逐步增加新版本的流量
-   - 发现问题时可以快速回滚，将全部流量切回稳定版本
+3. **响应头添加**
+   - 对于金丝雀版本的响应，添加 `x-canary: true` 响应头
+   - 对于稳定版本的响应，添加 `X-Envoy: true` 响应头
+   - 这些修改对客户端可见，但对上游服务不可见
 
 ## Istio 流量管理配置
 
@@ -70,7 +67,7 @@ spec:
 
 ### VirtualService
 
-配置基于权重的流量分配规则:
+配置基于请求头的路由和 HTTP 请求头操作:
 
 ```yaml
 apiVersion: networking.istio.io/v1beta1
@@ -81,16 +78,31 @@ spec:
   hosts:
     - demoapp
   http:
-    - name: weight-based-routing
+    - name: header-operation-canary # 基于请求头的金丝雀路由
+      match:
+      - headers:
+          x-canary:
+            exact: "true" # 匹配请求头中 x-canary=true 的请求
       route:
       - destination:
           host: demoapp
-          subset: v20
-        weight: 70
+          subset: v21-canary # 路由到金丝雀版本
+        headers:
+          request:
+            set:
+              User-Agent: Chrome # 设置请求头
+          response:
+            add:
+              x-canary: "true" # 添加响应头
+    - name: default # 默认规则
+      headers:
+        response:
+          add:
+            X-Envoy: "true" # 添加响应头
+      route:
       - destination:
           host: demoapp
-          subset: v21-canary
-        weight: 30
+          subset: v20 # 路由到稳定版本
 ```
 
 ## 部署说明
@@ -109,29 +121,35 @@ kubectl apply -f virtualservice-demoapp.yaml
 
 ## 访问测试
 
-使用以下命令测试流量分配:
+使用以下命令测试不同的请求头:
 
 ```bash
 # 创建测试客户端
 kubectl run client -it --rm --image=vvoo/admin-box --restart=Never --command -- bash
 
-# 多次请求服务，观察不同版本的响应比例
-while true; do curl demoapp/ ; sleep 0.$RANDOM; done
+# 测试默认路由（应该路由到 v2.0 版本）
+curl -v demoapp/
+
+# 测试带有 x-canary 请求头的请求（应该路由到 v2.1 版本）
+curl -v -H "x-canary: true" demoapp/
 ```
 
-预期结果：约 70% 的请求返回 v2.0 版本响应，30% 的请求返回 v2.1 版本响应。
+观察响应和响应头，验证路由规则和请求头操作是否生效。
 
-## 请求响应图
+## HTTP 请求头操作的应用场景
 
-![alt text](image-1.png)
+1. **用户分组测试**
+   - 根据用户 ID、会话 ID 或其他标识符将特定用户路由到新版本
+   - 例如：对内部测试人员或特定用户组启用新功能
 
+2. **A/B 测试**
+   - 根据用户代理、地理位置或其他属性分流不同用户
+   - 例如：为移动用户和桌面用户提供不同的体验
 
-## 灰度发布最佳实践
+3. **调试和故障排除**
+   - 添加特定请求头以追踪请求流程
+   - 例如：添加请求 ID 或跟踪标识符
 
-使用基于权重的流量分配进行灰度发布时，可以遵循以下步骤：
-
-1. **初始阶段**：将少量流量（如 5-10%）路由到新版本，大部分流量保持在稳定版本
-2. **监控阶段**：密切监控新版本的性能、错误率和用户反馈
-3. **逐步调整**：如果新版本表现良好，逐步增加其流量比例（如 20%、50%、80%）
-4. **完全切换**：确认新版本稳定后，将 100% 的流量切换到新版本
-5. **清理阶段**：下线旧版本的部署
+4. **安全增强**
+   - 移除或修改可能包含敏感信息的请求头
+   - 例如：过滤掉内部服务间通信中不需要的认证信息

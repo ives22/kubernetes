@@ -1,33 +1,33 @@
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService # 定义一个 Istio VirtualService 资源
 metadata:
-  name: demoapp 
+  name: demoapp # VirtualService 名称
 spec:
   hosts:
-    - demoapp
+    - demoapp # 应用于 demoapp 服务的请求
   http:
-    - name: header-operation-canary
+    - name: header-operation-canary # 第一条规则：基于请求头的金丝雀路由
       match:
       - headers:
           x-canary:
-            exact: "true"
+            exact: "true" # 匹配请求头中 x-canary=true 的请求
       route:
       - destination:
-          host: demoapp
-          subset: v21-canary
+          host: demoapp # 目标服务
+          subset: v21-canary # 将请求路由到金丝雀版本（v2.1）
         headers:
           request:
             set:
-              User-Agent: Chrome
+              User-Agent: Chrome # 设置请求头 User-Agent 为 Chrome（发送给上游服务）
           response:
             add:
-              x-canary: "true"
-    - name: default
+              x-canary: "true" # 在响应头中添加 x-canary=true（返回给客户端）
+    - name: default # 第二条规则：默认规则
       headers:
         response:
           add:
-            X-Envoy: "true"
+            X-Envoy: "true" # 在所有默认路由的响应头中添加 X-Envoy=true
       route:
       - destination:
-        host: demoapp
-        subset: v20
+          host: demoapp # 目标服务
+          subset: v20 # 将所有其他请求路由到稳定版本（v2.0）
