@@ -1,0 +1,33 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService # 定义一个 Istio VirtualService 资源
+metadata:
+  name: demoapp 
+spec:
+  hosts:
+    - demoapp
+  http:
+    - name: header-operation-canary
+      match:
+      - headers:
+          x-canary:
+            exact: "true"
+      route:
+      - destination:
+          host: demoapp
+          subset: v21-canary
+        headers:
+          request:
+            set:
+              User-Agent: Chrome
+          response:
+            add:
+              x-canary: "true"
+    - name: default
+      headers:
+        response:
+          add:
+            X-Envoy: "true"
+      route:
+      - destination:
+        host: demoapp
+        subset: v20
