@@ -1,29 +1,29 @@
 apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
+kind: VirtualService # 定义一个 Istio VirtualService 资源
 metadata:
-  name: demoapp
+  name: demoapp # VirtualService 名称
 spec:
   hosts:
-    - demoapp
+    - demoapp # 应用于 demoapp 服务的请求
   http:
-    - name: redirect
+    - name: redirect # 第一条规则：URL 重定向规则
       match: 
         - uri:
-            prefix: /host
+            prefix: /name # 匹配 URI 前缀为 /name 的请求
       redirect:
-        uri: /hostname
-    - name: canary
+        uri: /hostname # 将请求重定向到 /hostname 路径（HTTP 301 重定向）
+    - name: canary # 第二条规则：URL 重写规则（金丝雀测试）
       match:
-        - url: 
-            prifix: /canary
+        - uri: 
+            prefix: /canary # 匹配 URI 前缀为 /canary 的请求
       rewrite:
-        url: /
+        uri: / # 将请求路径重写为根路径 /（在转发到目标服务之前修改路径）
       route:
         - destination:
-            host: demoapp
-            subset: v21-canary
-    - name: default
+            host: demoapp # 目标服务
+            subset: v21-canary # 将请求路由到金丝雀版本（v2.1）
+    - name: default # 第三条规则：默认规则
       route:
       - destination:
-        host: demoapp
-        subset: v20
+          host: demoapp # 目标服务
+          subset: v20 # 将所有其他请求路由到稳定版本（v2.0）
