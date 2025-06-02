@@ -1,18 +1,19 @@
-# Istio 流量管理 - URL 重定向和重写示例
+# Istio 流量管理 - 基于权重的流量分配示例
 
-本示例演示了 Istio 的 URL 重定向（Redirect）和重写（Rewrite）功能，通过这些功能可以实现路径转发、API 版本控制和金丝雀测试等高级流量管理场景。
+本示例演示了 Istio 的基于权重的流量分配功能（Weight-based Routing），通过为不同版本的服务分配不同的流量权重，实现精确的流量控制和灰度发布。
 
 ## 应用架构
 
 本示例部署了同一应用的两个不同版本：
 
-- **Demoapp v2.0**
+- **Demoapp v2.0** (稳定版本)
   - 镜像: `vvoo/demoapp:v2.0`
   - 部署: 2 个副本
   - 标签: `version: v2.0`
   - 环境变量:
     - `PORT`: 8080
     - `VERSION`: v2.0
+  - 流量权重: 70%
 
 - **Demoapp v2.1** (金丝雀版本)
   - 镜像: `vvoo/demoapp:v2.0` (使用相同镜像，通过环境变量区分版本)
@@ -21,25 +22,27 @@
   - 环境变量:
     - `PORT`: 8080
     - `VERSION`: v2.1
+  - 流量权重: 30%
 
 两个版本共用同一个 Service：`demoapp`，通过 Istio 的流量管理功能进行请求分发。
 
 ![应用架构图](image.png)
 
-## URL 重定向和重写功能说明
+## 基于权重的流量分配说明
 
-本示例实现了三种不同的流量管理策略：
+基于权重的流量分配是一种常见的灰度发布（Canary Deployment）策略，具有以下特点：
 
-1. **URL 重定向（Redirect）**
-   - 当访问 `/name` 路径时，会被重定向到 `/hostname` 路径
-   - 这是一个 HTTP 301 重定向，浏览器会显示新的 URL
+1. **精确控制流量比例**
+   - 可以为每个服务版本设置精确的流量百分比
+   - 本示例中，70% 的流量路由到 v2.0 版本，30% 的流量路由到 v2.1 版本
 
-2. **URL 重写（Rewrite）+ 金丝雀测试**
-   - 当访问 `/canary` 路径时，URL 会被重写为 `/`，并路由到 v2.1 版本（金丝雀版本）
-   - 用户看到的仍然是 `/canary` 路径，但实际请求的是服务的根路径
+2. **无需修改客户端**
+   - 客户端无需关心服务的不同版本
+   - 所有流量控制都在服务网格内部完成
 
-3. **默认路由**
-   - 所有其他请求都会路由到 v2.0 版本
+3. **灵活调整**
+   - 可以随时调整权重比例，逐步增加新版本的流量
+   - 发现问题时可以快速回滚，将全部流量切回稳定版本
 
 ## Istio 流量管理配置
 
@@ -67,7 +70,7 @@ spec:
 
 ### VirtualService
 
-配置 URL 重定向、重写和路由规则:
+配置基于权重的流量分配规则:
 
 ```yaml
 apiVersion: networking.istio.io/v1beta1
@@ -78,27 +81,16 @@ spec:
   hosts:
     - demoapp
   http:
-    - name: redirect # URL 重定向规则
-      match: 
-        - uri:
-            prefix: /name # 匹配 URI 前缀为 /name 的请求
-      redirect:
-        uri: /hostname # 将请求重定向到 /hostname 路径
-    - name: canary # URL 重写规则（金丝雀测试）
-      match:
-        - uri: 
-            prefix: /canary # 匹配 URI 前缀为 /canary 的请求
-      rewrite:
-        uri: / # 将请求路径重写为根路径 /
-      route:
-        - destination:
-            host: demoapp
-            subset: v21-canary # 路由到金丝雀版本
-    - name: default # 默认规则
+    - name: weight-based-routing
       route:
       - destination:
           host: demoapp
-          subset: v20 # 路由到稳定版本
+          subset: v20
+        weight: 70
+      - destination:
+          host: demoapp
+          subset: v21-canary
+        weight: 30
 ```
 
 ## 部署说明
@@ -117,35 +109,29 @@ kubectl apply -f virtualservice-demoapp.yaml
 
 ## 访问测试
 
-使用以下命令测试不同的路径:
+使用以下命令测试流量分配:
 
 ```bash
 # 创建测试客户端
 kubectl run client -it --rm --image=vvoo/admin-box --restart=Never --command -- bash
 
-# 测试默认路由（应该路由到 v2.0 版本）
-curl demoapp/
-
-# 测试 URL 重定向（应该被重定向到 /hostname 路径）
-curl -L demoapp/name
-
-# 测试 URL 重写（应该路由到 v2.1 版本）
-curl demoapp/canary
+# 多次请求服务，观察不同版本的响应比例
+while true; do curl demoapp/ ; sleep 0.$RANDOM; done
 ```
 
+预期结果：约 70% 的请求返回 v2.0 版本响应，30% 的请求返回 v2.1 版本响应。
 
 ## 请求响应图
-![alt text](image.png)
+
+![alt text](image-1.png)
 
 
-## URL 重定向和重写的区别
+## 灰度发布最佳实践
 
-1. **URL 重定向（Redirect）**:
-   - 客户端收到 HTTP 301/302 响应，需要发起新的请求
-   - 浏览器地址栏 URL 会改变
-   - 适用于 API 版本迁移、域名变更等场景
+使用基于权重的流量分配进行灰度发布时，可以遵循以下步骤：
 
-2. **URL 重写（Rewrite）**:
-   - 在服务端内部修改请求路径，客户端无感知
-   - 浏览器地址栏 URL 不变
-   - 适用于内部服务版本控制、API 结构调整等场景
+1. **初始阶段**：将少量流量（如 5-10%）路由到新版本，大部分流量保持在稳定版本
+2. **监控阶段**：密切监控新版本的性能、错误率和用户反馈
+3. **逐步调整**：如果新版本表现良好，逐步增加其流量比例（如 20%、50%、80%）
+4. **完全切换**：确认新版本稳定后，将 100% 的流量切换到新版本
+5. **清理阶段**：下线旧版本的部署
