@@ -5,7 +5,7 @@ metadata:
 spec:
   selector: 
     istio: ingressgateway # 选择标签为 istio=ingressgateway 的 Istio Ingress Gateway 部署
-  services:
+  servers:
   - port:
       number: 80 # 监听的端口号
       name: http # 端口名称
