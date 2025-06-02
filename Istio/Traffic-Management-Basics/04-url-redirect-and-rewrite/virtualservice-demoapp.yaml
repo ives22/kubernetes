@@ -1,0 +1,29 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: demoapp
+spec:
+  hosts:
+    - demoapp
+  http:
+    - name: redirect
+      match: 
+        - uri:
+            prefix: /host
+      redirect:
+        uri: /hostname
+    - name: canary
+      match:
+        - url: 
+            prifix: /canary
+      rewrite:
+        url: /
+      route:
+        - destination:
+            host: demoapp
+            subset: v21-canary
+    - name: default
+      route:
+      - destination:
+        host: demoapp
+        subset: v20
