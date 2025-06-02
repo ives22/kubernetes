@@ -4,7 +4,7 @@ metadata:
   labels:
     app: demoapp
     version: v2.1
-  name: demoapp
+  name: demoappv21
 spec:
   replicas: 2
   selector:
