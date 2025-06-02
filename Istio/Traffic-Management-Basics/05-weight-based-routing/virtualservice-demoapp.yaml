@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService # 定义一个 Istio VirtualService 资源
+metadata:
+  name: demoapp # VirtualService 名称
+spec:
+  hosts:
+    - demoapp # 应用于 demoapp 服务的请求
+  http:
+    - name: weight-based-routing
+      route:
+      - destination:
+          host: demoapp
+          subset: v20
+        weight: 70
+      - destination:
+          host: demoapp
+          subset: v21-canary
+        weight: 30
