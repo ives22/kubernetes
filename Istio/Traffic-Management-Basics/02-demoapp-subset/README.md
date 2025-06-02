@@ -25,6 +25,13 @@
 说明：demoapp程序通过VERSION可以控制程序运行的版本号。
 两个版本共用同一个 Service：`demoapp`，通过 Istio 的流量管理功能进行请求分发。
 
+## 应用通信流程
+
+前端应用作为代理，将请求转发到后端应用进行处理。
+
+![alt text](image.png)
+
+
 ## Istio 流量管理配置
 
 ### DestinationRule
@@ -99,3 +106,7 @@ while true; do curl demoapp ; sleep 0.$RANDOM; done
 ```
 
 观察输出，应该能看到大约 80% 的请求返回 v2.0 版本的响应，20% 的请求返回 v2.1 版本的响应。
+
+## 请求响应图
+
+![alt text](image-1.png)
