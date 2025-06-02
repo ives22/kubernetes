@@ -38,3 +38,12 @@ kubectl apply -f deploy-frontend.yaml
 kubectl apply -f deploy-demoapp.yaml
 ```
 
+访问测试：
+
+```bash
+kubectl run client -it --rm --image=vvoo/admin-box --restart=Never --command -- bash
+while true; do curl frontend ; sleep 0.$RANDOM; done
+```
+
+## 请求响应图
+![alt text](image-1.png)
