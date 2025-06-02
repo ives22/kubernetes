@@ -1,0 +1,15 @@
+apiVersion: networking.istio.io/v1
+kind: Gateway # 定义一个 Istio Gateway 资源
+metadata:
+  name: frontend-gateway # Gateway 名称
+spec:
+  selector: 
+    istio: ingressgateway # 选择标签为 istio=ingressgateway 的 Istio Ingress Gateway 部署
+  services:
+  - port:
+      number: 80 # 监听的端口号
+      name: http # 端口名称
+      protocol: HTTP # 使用的协议
+    hosts:
+    - "frontend.ops.com" # 允许访问的主机名，需要在 DNS 或 hosts 文件中配置
+  

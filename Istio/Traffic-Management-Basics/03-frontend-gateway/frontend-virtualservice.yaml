@@ -1,0 +1,20 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService # 定义一个 Istio VirtualService 资源
+metadata:
+  name: frontend # VirtualService 名称
+spec:
+  gateways:
+    - frontend-gateway # 关联到前面定义的 Gateway，用于外部流量入口
+    - mesh # 同时支持网格内部流量
+  hosts:
+    - "frontend.ops.com" # 匹配请求的主机名
+  http:
+  - name: default # 路由规则名称
+    match:
+    - uri: 
+        prefix: / # 匹配所有 URI 路径（修正了拼写错误：prifix -> prefix）
+    route:
+    - destination:
+        host: frontend.default.svc.cluster.local # 目标服务的完全限定域名
+        port: 
+          number: 80 # 目标服务端口
