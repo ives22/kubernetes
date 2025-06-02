@@ -1,4 +1,4 @@
-apiVersion: networking.istio.io/v1
+apiVersion: networking.istio.io/v1beta1
 kind: Gateway # 定义一个 Istio Gateway 资源
 metadata:
   name: frontend-gateway # Gateway 名称
