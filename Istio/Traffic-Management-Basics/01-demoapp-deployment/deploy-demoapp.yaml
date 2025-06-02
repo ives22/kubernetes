@@ -6,7 +6,7 @@ metadata:
     version: v2.0
   name: demoapp
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: demoapp
@@ -38,8 +38,8 @@ metadata:
   name: demoapp
 spec:
   ports:
-  - name: http-8080
-    port: 8080
+  - name: http
+    port: 80
     protocol: TCP
     targetPort: 8080
   selector:

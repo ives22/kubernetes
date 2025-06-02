@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   labels:
     app: frontend
-    version: v1.0
+    version: v1.1
   name: frontend
 spec:
   replicas: 1
@@ -14,21 +14,21 @@ spec:
     metadata:
       labels:
         app: frontend
-        version: v1.0
+        version: v1.1
     spec:
       containers:
-      - image: vvoo/frontend:v1.0
+      - image: vvoo/frontend:v1.1
         imagePullPolicy: IfNotPresent
         name: frontend
         env:
         - name: "BACKEND_URL"
-          value: "http://demoapp:8080"
+          value: "http://demoapp:80"
         - name: "PORT"
-          value: "80"
+          value: "5901"
         - name: "PROXY_VERSION"
           value: "v1.0"
         ports:
-        - containerPort: 80
+        - containerPort: 5901
           name: http
           protocol: TCP
 ---
@@ -38,10 +38,10 @@ metadata:
   name: frontend
 spec:
   ports:
-  - name: http-80
+  - name: http
     port: 80
     protocol: TCP
-    targetPort: 80
+    targetPort: 5901
   selector:
     app: frontend
   type: ClusterIP
