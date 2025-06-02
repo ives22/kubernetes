@@ -164,3 +164,8 @@ while true; do curl frontend ; sleep 0.$RANDOM; done
 ```
 
 预期结果：约 80% 的请求返回 v2.0 版本响应，20% 的请求返回 v2.1 版本响应。
+
+
+## 请求响应图
+
+![alt text](image-1.png)
