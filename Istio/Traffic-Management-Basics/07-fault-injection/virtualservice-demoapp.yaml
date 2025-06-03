@@ -1,0 +1,32 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService # 定义一个 Istio VirtualService 资源
+metadata:
+  name: demoapp # VirtualService 名称
+spec:
+  hosts:
+    - demoapp # 应用于 demoapp 服务的请求
+  http:
+    - name: canary # 第一条规则：金丝雀版本路由规则
+      match:
+      - headers:
+          x-canary:
+            exact: "true" # 匹配请求头中 x-canary=true 的请求
+      route:
+      - destination:
+          host: demoapp # 目标服务
+          subset: v21-canary # 路由到金丝雀版本（v2.1）
+      fault: # 故障注入配置 - HTTP 中断
+        abort:
+          httpStatus: 500 # 注入 HTTP 500 错误
+          percentage:
+            value: 20 # 20% 的请求会被注入故障（返回 500 错误）
+    - name: default # 第二条规则：默认规则
+      fault: # 故障注入配置 - 延迟
+        delay:
+          fixedDelay: 3s # 注入 3 秒的固定延迟
+          percentage:
+            value: 50 # 50% 的请求会被注入延迟
+      route:
+      - destination:
+          host: demoapp # 目标服务
+          subset: v20 # 将所有其他请求路由到稳定版本（v2.0）
