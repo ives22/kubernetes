@@ -133,6 +133,9 @@ spec:
 kubectl apply -f deploy-demoapp.yaml
 kubectl apply -f deploy-demoapp-v21.yaml
 
+# 部署前端代理程序
+kubectl apply -f deploy-frontend.yaml
+
 # 应用 Istio 流量管理配置
 kubectl apply -f destinationrule.yaml
 kubectl apply -f virtualservice.yaml
