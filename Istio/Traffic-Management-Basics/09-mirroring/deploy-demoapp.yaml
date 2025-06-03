@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: demoapp
+    version: v2.0
+  name: demoapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demoapp
+  template:
+    metadata:
+      labels:
+        app: demoapp
+        version: v2.0
+    spec:
+      containers:
+      - image: vvoo/demoapp:v2.0
+        imagePullPolicy: IfNotPresent
+        name: demoapp
+        env:
+        - name: "PORT"
+          value: "8080"
+        - name: "VERSION"
+          value: "v2.0"
+        ports:
+        - containerPort: 8080
+          name: web
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: demoapp
+  name: demoapp
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: demoapp
+  type: ClusterIP

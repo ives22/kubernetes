@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService # 定义一个 Istio VirtualService 资源
+metadata:
+  name: demoapp # VirtualService 名称
+spec:
+  hosts:
+    - demoapp # 应用于 demoapp 服务的请求
+  http:
+  - route:
+    - destination: # 主路由目标
+        host: demoapp # 目标服务
+        subset: v20 # 路由到 v2.0 版本
+      weight: 100 # 100% 的流量都路由到主目标
+    mirror: # 流量镜像配置
+      host: demoapp # 镜像目标服务
+      subset: v21 # 镜像到 v2.1 版本
+    mirrorPercentage: # 镜像流量百分比
+      value: 100 # 100% 的流量都会被镜像
