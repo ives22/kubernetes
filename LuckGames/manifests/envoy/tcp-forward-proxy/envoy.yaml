@@ -1,0 +1,181 @@
+# ==== Envoy 全局管理接口配置 ====
+admin:
+  address:
+    socket_address:
+      protocol: TCP
+      address: 127.0.0.1
+      port_value: 9901
+# 📌 Envoy 自带的 Admin Server（管理界面）
+#    - 监听本地127.0.0.1:9901
+#    - 可以通过 curl 查询 Envoy 的状态、统计信息、动态配置
+#    - 生产环境通常只开放给本机（不暴露出去）
+
+# ==== Envoy 静态资源配置（监听器、集群） ====
+static_resources:
+  listeners:
+  - name: listener_0
+    address:
+      socket_address:
+        protocol: TCP
+        address: 0.0.0.0
+        port_value: 10000
+    # 📌 配置一个 Listener（监听器）
+    #    - 监听所有网卡的10000端口
+    #    - 可以接受外部流量（客户端请求）
+
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          # 📌 使用 HTTP Connection Manager
+          #    - 作用：处理 HTTP 层面的连接、请求、路由
+          #    - 必须有的 filter，几乎所有 HTTP 场景都用它
+
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains: ["*"]
+              # 📌 定义虚拟主机
+              #    - 匹配任意 Host（*）
+              #    - 每个 VirtualHost 下面可以定义多个路由规则（routes）
+
+              routes:
+              - match:
+                  prefix: "/force-host-rewrite"
+                route:
+                  cluster: dynamic_forward_proxy_cluster
+                typed_per_filter_config:
+                  envoy.filters.http.dynamic_forward_proxy:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.PerRouteConfig
+                    host_rewrite_literal: www.example.org
+                # 📌 路由规则1：
+                #    - 请求路径以 /force-host-rewrite 开头的
+                #    - 发到 dynamic_forward_proxy_cluster
+                #    - 并且强制把 HTTP 请求头里面的 Host 改写成 www.example.org
+                #    - 主要用于「目的主机不由用户决定，由代理控制」的场景
+
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: dynamic_forward_proxy_cluster
+                # 📌 路由规则2：
+                #    - 所有其他请求（默认兜底）
+                #    - 也发到 dynamic_forward_proxy_cluster
+                #    - 不改写 Host，由客户端自己带
+
+          http_filters:
+          - name: envoy.filters.http.dynamic_forward_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+              dns_cache_config:
+                name: dynamic_forward_proxy_cache_config
+                dns_lookup_family: V4_ONLY
+                typed_dns_resolver_config:
+                  name: envoy.network.dns_resolver.cares
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
+                    resolvers:
+                    - socket_address:
+                        address: "8.8.8.8"
+                        port_value: 53
+                    dns_resolver_options:
+                      use_tcp_for_dns_lookups: true
+                      no_default_search_domain: true
+            # 📌 HTTP 层的 Dynamic Forward Proxy Filter
+            #    - 允许动态按域名转发（不提前配置目标 upstream）
+            #    - 结合动态DNS缓存，自动解析新目标地址
+            #    - 使用 cares DNS resolver：
+            #         - 只用 8.8.8.8 解析
+            #         - DNS查询走TCP（更稳定）
+            #         - 禁止默认搜索域（避免系统搜索域污染）
+
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+            # 📌 Router Filter
+            #    - 所有 HTTP 请求，最后一定需要经过 router 才能根据路由规则发出请求
+            #    - 必须放在 http_filters 列表的最后！
+
+  # === TCP代理监听器 ===
+  - name: tcp_listener
+    address:
+      socket_address:
+        protocol: TCP
+        address: 0.0.0.0
+        port_value: 10001
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.tcp_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+          stat_prefix: ingress_tcp
+          cluster: tcp_dynamic_forward_proxy_cluster
+          access_log:
+          - name: envoy.access_loggers.stdout
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+              
+  clusters:
+  - name: dynamic_forward_proxy_cluster
+    lb_policy: CLUSTER_PROVIDED
+    cluster_type:
+      name: envoy.clusters.dynamic_forward_proxy
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+        dns_cache_config:
+          name: dynamic_forward_proxy_cache_config
+          dns_lookup_family: V4_ONLY
+          typed_dns_resolver_config:
+            name: envoy.network.dns_resolver.cares
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
+              resolvers:
+              - socket_address:
+                  address: "8.8.8.8"
+                  port_value: 53
+              dns_resolver_options:
+                use_tcp_for_dns_lookups: true
+                no_default_search_domain: true
+    # 📌 Dynamic Forward Proxy Cluster 配置
+    #    - 类型是 dynamic_forward_proxy（动态集群）
+    #    - 根据请求的Host字段动态解析IP，不需要预配置
+    #    - 使用 cares resolver 走8.8.8.8的 TCP DNS
+    #    - 配置了本地 DNS 缓存（减少DNS压力）
+    #    - 负载均衡策略 CLUSTER_PROVIDED，意味着 dynamic proxy 自己决定
+
+  # === TCP用 TCP Dynamic Forward Proxy Cluster ===
+  - name: tcp_dynamic_forward_proxy_cluster
+    connect_timeout: 5s
+    lb_policy: CLUSTER_PROVIDED
+    cluster_type:
+      name: envoy.clusters.dynamic_forward_proxy
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+        # dns_cache_config:
+        #   name: dynamic_forward_proxy_cache_config
+        #   dns_lookup_family: V4_ONLY
+        #   typed_dns_resolver_config:
+        #     name: envoy.network.dns_resolver.cares
+        #     typed_config:
+        #       "@type": type.googleapis.com/envoy.extensions.network.dns_resolver.cares.v3.CaresDnsResolverConfig
+        #       resolvers:
+        #       - socket_address:
+        #           address: "8.8.8.8"
+        #           port_value: 53
+        #       dns_resolver_options:
+        #         use_tcp_for_dns_lookups: true
+        #         no_default_search_domain: true
+
+    # transport_socket:
+    #   name: envoy.transport_sockets.tls
+    #   typed_config:
+    #     "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+    #     common_tls_context:
+    #       validation_context:
+    #         trusted_ca: {filename: /etc/ssl/certs/ca-certificates.crt}
+    # 📌 可选：如果想支持上游 HTTPS，可以取消注释这里，启用TLS连接
+    #    - 验证上游服务器证书是否可信
+    #    - 用本地系统CA文件进行校验

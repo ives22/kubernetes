@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clean-logs
+spec:
+  # 每天凌晨 2 点执行
+  # schedule: "0 2 * * *"
+  schedule: "05 4 * * *"
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: clean-logs
+            image: vvoo/admin-box:latest
+            # command: ["/bin/bash", "/scripts/clean_logs.sh"]
+            # args: ["/mnt/logs", "7"] # 目录和天数
+            volumeMounts:
+              - name: log-pvc
+                mountPath: /mnt/logs
+              - name: clean-script
+                mountPath: /scripts
+          volumes:
+            - name: log-pvc
+              persistentVolumeClaim:
+                claimName: clean-log-demo-pvc   # 这里替换为wallet-center服务 PVC 名称
+            - name: clean-script
+              configMap:
+                name: clean-log-script
+                defaultMode: 0755

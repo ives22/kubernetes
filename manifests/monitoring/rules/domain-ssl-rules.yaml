@@ -1,0 +1,60 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: domain-ssl.rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: domain-ssl.rules
+      rules:
+        # 1. 严重告警：证书将在3天内过期
+        - alert: SSLCertExpiringSoonCritical
+          expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 3
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "域名证书即将过期 (严重)"
+            description: "实例 {{ $labels.instance }} (域名: {{ $labels.domain }}) 的 SSL 证书将在 3 天内过期，请尽快更新！剩余时间: {{ $value | humanizeDuration }}"
+
+        # 2. 警告告警：证书将在7天内过期
+        - alert: SSLCertExpiringSoonWarning
+          expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "域名证书即将过期 (警告)"
+            description: "域名 {{ $labels.instance }} (项目: {{ $labels.domain }}) 的 SSL 证书将在 7 天内过期。剩余时间: {{ $value | humanizeDuration }}"
+
+        # 域名所有权即将过期 (严重 - 15天)
+        - alert: DomainRegistrationCritical
+          expr: domain_expiry_days < 15
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "域名注册即将到期 (严重)"
+            description: "域名 {{ $labels.domain }} 还有 {{ $value }} 天即将到期，请及时续费，否则域名将被释放！"
+
+        # 域名所有权即将过期 (警告 - 45天)
+        - alert: DomainRegistrationWarning
+          expr: domain_expiry_days < 45
+          for: 12h
+          labels:
+            severity: warning
+          annotations:
+            summary: "域名注册即将到期 (警告)"
+            description: "域名 {{ $labels.domain }} 还有 {{ $value }} 天到期，请检查财务流程并申请续费。"
+
+        # 域名 WHOIS 探测失败 (警告)
+        - alert: DomainRegistrationProbeFailed
+          expr: domain_probe_success == 0
+          for: 3h
+          labels:
+            severity: warning
+          annotations:
+            summary: "域名注册信息探测失败"
+            description: "无法获取域名 {{ $labels.domain }} 的 WHOIS 信息。可能是由于 WHOIS 服务器限流或网络连接问题。"

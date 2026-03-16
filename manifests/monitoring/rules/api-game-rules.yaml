@@ -1,0 +1,53 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-game.rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: api-game.rules
+      rules:
+        - alert: GameServerABConflict
+          # 核心逻辑：
+          # 1. 匹配所有以 -a 或 -b 结尾的游戏 StatefulSet
+          # 2. 动态提取前缀作为游戏标识 (game)
+          # 3. 如果同一个游戏在同一集群、同一命名空间下有两个 Ready 实例，则触发
+          expr: |
+            count by (namespace, game, cluster) (
+              label_replace(
+                # 1. 核心：STS 的 Ready 副本数大于 0
+                kube_statefulset_status_replicas_ready{statefulset=~".*-[ab]"} > 0
+                # 2. 关联：确保该 STS 下存在至少一个非 Terminating 的 Pod
+                and on(namespace, statefulset, cluster) (
+                  # 找出所有没有删除时间戳的 Pod，并把 owner 映射为 statefulset 标签
+                  label_join(
+                    kube_pod_owner{owner_kind="StatefulSet"} unless on(namespace, pod, cluster) kube_pod_deletion_timestamp,
+                    "statefulset", "", "owner_name"
+                  )
+                ),
+                # 3. 标签替换：将 sts-a/sts-b 统一为 game 标签
+                "game", "$1", "statefulset", "(.*)-[ab]"
+              )
+            ) > 1
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "游戏服 AB 双活冲突: {{ $labels.game }}"
+            description: "检测到该游戏服的 -a 和 -b 两个实例同时处于 Ready 状态，请及时处理。"
+
+        - alert: GameServerReplicasTooHigh
+          expr: |
+            sum by(owner_name) (
+              kube_pod_labels{label_game!=""}
+              * on(pod) group_left(owner_name)
+              kube_pod_owner{namespace="api-games", owner_kind="StatefulSet"}
+            ) > 50
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "游戏服副本数过多: {{ $labels.owner_name }}"
+            description: "检测到该游戏服的副本数超过 50 个，请及时处理。"

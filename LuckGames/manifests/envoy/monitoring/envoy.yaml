@@ -1,0 +1,154 @@
+node:
+  id: front-envoy
+  cluster: mycluster
+
+# 管理接口配置（用于Envoy内部管理和监控）
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0  # 监听所有网络接口的管理请求
+      port_value: 9901   # 管理界面访问端口（可通过该端口访问/envoy管理界面）
+
+stats_sinks:
+- name: envoy.statsd
+  typed_config:
+    "@type": type.googleapis.com/envoy.config.metrics.v3.StatsdSink
+    tcp_cluster_name: statsd_exporter
+    prefix: front-envoy
+
+
+# 静态资源配置（核心流量处理配置）
+static_resources:
+  # 监听器配置（定义Envoy如何接收外部请求）
+  listeners:
+  - name: grpc_listener  # 监听器名称标识
+    address:
+      socket_address:
+        protocol: TCP    # 使用TCP传输层协议
+        address: 0.0.0.0 # 监听所有网络接口
+        port_value: 50051  # gRPC服务监听端口（标准gRPC端口）
+    
+    # 过滤器链（定义请求处理流水线）
+    filter_chains:
+    - filters:
+      # HTTP连接管理器（将原始TCP连接转换为HTTP处理）
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: grpc_ingress  # 监控指标前缀（用于Prometheus等监控系统）
+          codec_type: AUTO  # 自动检测HTTP协议版本（支持HTTP/1.1和HTTP/2）
+          # 访问日志配置（JSON格式结构化日志）
+          access_log:
+          - name: envoy.access_loggers.file
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+              path: "/dev/stdout"  # 日志输出到标准输出（通常会被容器日志系统捕获）
+              log_format:
+                json_format: {  # 结构化日志字段（便于日志分析系统处理）
+                  "start": "[%START_TIME%]",       # 请求开始时间
+                  "method": "%REQ(:METHOD)%",      # HTTP方法
+                  "url": "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%",  # 请求路径
+                  "protocol": "%PROTOCOL%",        # 协议版本（HTTP/1.1或HTTP/2）
+                  "status": "%RESPONSE_CODE%",     # HTTP状态码
+                  "respflags": "%RESPONSE_FLAGS%", # Envoy内部响应标志（如NR-无路由，UH-无健康上游）
+                  "bytes-received": "%BYTES_RECEIVED%",  # 接收字节数
+                  "bytes-sent": "%BYTES_SENT%",    # 发送字节数
+                  "duration": "%DURATION%",        # 请求总耗时（毫秒）
+                  "upstream-service-time": "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%",  # 上游处理时间
+                  "x-forwarded-for": "%REQ(X-FORWARDED-FOR)%",  # 客户端原始IP
+                  "user-agent": "%REQ(USER-AGENT)%",  # 客户端设备信息
+                  "request-id": "%REQ(X-REQUEST-ID)%",  # 请求唯一ID（用于分布式追踪）
+                  "authority": "%REQ(:AUTHORITY)%",  # HTTP Host头
+                  "upstream-host": "%UPSTREAM_HOST%",  # 上游主机地址
+                  "remote-ip": "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"  # 客户端IP（不含端口）
+                }
+          # 路由配置（定义请求如何路由到后端服务）
+          route_config:
+            name: grpc_route  # 路由配置名称
+            virtual_hosts:    # 虚拟主机（基于域名的路由）
+            - name: grpc_services  # 虚拟主机名称
+              domains: ["*"]  # 匹配所有域名（通用配置）
+              routes:
+              # 路由规则1：匹配/demo.HelloWorld前缀的gRPC请求
+              - match:
+                  prefix: "/demo.HelloWorld"  # gRPC服务方法名前缀（格式为/包名.服务名）
+                route:
+                  cluster: serviceA_cluster  # 转发到serviceA集群
+              # 路由规则2：匹配/demo.User前缀的gRPC请求
+              - match:
+                  prefix: "/demo.User"       # 另一个gRPC服务前缀
+                route:
+                  cluster: serviceB_cluster  # 转发到serviceB集群
+          # HTTP过滤器链（请求处理中间件）
+          http_filters:
+          # gRPC HTTP1桥接过滤器（允许HTTP/1.1客户端访问gRPC服务）
+          - name: envoy.filters.http.grpc_http1_bridge
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_http1_bridge.v3.Config
+          # 路由器过滤器（必须作为最后一个过滤器）
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+          
+          use_remote_address: true  # 使用真实客户端IP（而非代理IP）
+
+  # 上游集群配置（定义后端服务）
+  clusters:
+  # 集群1：serviceA的后端服务配置
+  - name: serviceA_cluster  # 集群名称（需与路由配置对应）
+    connect_timeout: 5s     # 连接超时时间（建议设为略大于上游服务响应时间）
+    lb_policy: ROUND_ROBIN  # 负载均衡策略（轮询）
+    type: STRICT_DNS        # 服务发现类型（严格DNS模式，定期刷新DNS记录）
+    
+    # HTTP协议选项（强制使用HTTP/2协议，gRPC必须）
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}  # 空配置表示启用默认HTTP/2设置
+    
+    # 端点配置（实际服务地址）
+    load_assignment: 
+      cluster_name: serviceA_cluster  # 集群名称（需保持一致）
+      endpoints:
+      - lb_endpoints:  # 负载均衡端点列表
+        - endpoint:
+            address: 
+              socket_address:
+                address: service1  # 服务域名或IP（K8s中通常为Service名称）
+                port_value: 50051  # 服务端口（标准gRPC端口）
+
+  # 集群2：serviceB的后端服务配置
+  - name: serviceB_cluster
+    connect_timeout: 5s
+    lb_policy: ROUND_ROBIN
+    type: STRICT_DNS
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+    load_assignment: 
+      cluster_name: serviceB_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address: 
+              socket_address:
+                address: service2  # 第二个服务的地址
+                port_value: 50051
+  
+  # 监控集群配置
+  - name: statsd_exporter
+    connect_timeout: 0.25s
+    type: strict_dns
+    lb_policy: ROUND_ROBIN
+    load_assignment: 
+      cluster_name: statsd_exporter
+      endpoints:
+      - lb_endpoints:
+        - endpoint: 
+            address:
+              socket_address: 
+                address: statsd_exporter
+                port_value: 9125

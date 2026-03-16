@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      scrape_timeout: 15s
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+              - 'alertmanager:9093'
+
+    rule_files:
+      - '/etc/prometheus/rules.yml'
+
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+      
+      - job_name: 'coredns'
+        static_configs:
+          - targets: ['192.171.205.129:9153', '192.171.205.131:9153']
+      
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis.default.svc.cluster.local:9121']
+        
+      # 通过kubernetes_sd_configs自动发现node-exporter
+      - job_name: 'node-exporter'
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - source_labels: [__address__]
+            regex: ([^:]+):10250
+            target_label: __address__
+            replacement: $1:9100
+            action: replace
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+            replacement: $1
+
+  rules.yml: |
+    groups:
+    - name: test-node-memory
+      rules:
+      - alert: NodeMemoryUsage
+        expr: (node_memory_MemTotal_bytes - (node_memory_MemFree_bytes + node_memory_Buffers_bytes + node_memory_Cached_bytes)) / node_memory_MemTotal_bytes * 100 > 20
+        for: 2m
+        annotations:
+          summary: "{{$labels.instance}}: High Memory usage detected"
+          description: "{{$labels.instance}}: Memory usage is above 20% (current value is: {{ $value }})"

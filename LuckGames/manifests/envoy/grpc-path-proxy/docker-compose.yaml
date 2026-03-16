@@ -1,0 +1,45 @@
+version: "3.3"
+
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.32.5
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml
+    depends_on:
+      - demoapp_service1
+      - demoapp_service2
+    ports:
+      - "${PORT_PROXY:-50051}:50051"
+      - "${PORT_ADMIN:-9901}:9901"
+    networks:
+      envoymesh:
+        ipv4_address: 172.16.2.2
+        aliases:
+          - forward-proxy
+  
+  demoapp_service1:
+    image: vvoo/demoapp-grpc:v1.2
+    ports:
+      - "${PORT:-50052}:50051"
+    networks:
+      envoymesh:
+        ipv4_address: 172.16.2.3
+        aliases:
+          - service1
+  
+  demoapp_service2:
+    image: vvoo/demoapp-grpc:v1.2
+    ports:
+      - "${PORT:-50053}:50051"
+    networks:
+      envoymesh:
+        ipv4_address: 172.16.2.4
+        aliases:
+          - service2
+
+networks:
+  envoymesh:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.16.2.0/24

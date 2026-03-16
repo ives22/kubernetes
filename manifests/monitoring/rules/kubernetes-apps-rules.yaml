@@ -1,0 +1,347 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubernetes-apps.rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: kubernetes-apps.rules
+      rules:
+        - alert: KubePodNotReady
+          # 核心逻辑：
+          # 1. 筛选 Pending/Unknown/Failed 状态
+          # 2. 排除 Job 类型的 Pod (避免短作业失败干扰)
+          # 3. 关联 owner_kind 标签 (Deployment/StatefulSet 等)
+          expr: |
+            sum by (namespace, pod, phase, cluster) (
+              kube_pod_status_phase{job="kube-state-metrics", phase=~"Pending|Unknown|Failed"}
+            )
+            * on (namespace, pod, cluster) group_left(owner_kind)
+            topk by (namespace, pod, cluster) (1,
+              max by (namespace, pod, owner_kind, cluster) (kube_pod_owner{owner_kind!="Job"})
+            ) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod 状态异常 ({{ $labels.phase }})"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 在最近5分钟一直处于 {{ $labels.phase }} 状态，请检查调度配置或容器日志。"
+
+        - alert: KubePodFrequentRestarts
+          # 核心逻辑：
+          # 1. 统计5分钟窗口内重启超过 3 次
+          # 2. 按命名空间、Pod、容器和集群维度聚合
+          expr: |
+            sum by (namespace, pod, container, cluster) (
+              increase(kube_pod_container_status_restarts_total{job="kube-state-metrics"}[5m])
+            ) > 3
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod 启动失败 (容器: {{ $labels.container }})"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 的 {{ $labels.container }} 容器在最近5分钟内启动异常累计3次以上，请检查调度配置或容器日志。"
+            action_hint: "请运行: kubectl logs {{ $labels.pod }} -n {{ $labels.namespace }} --previous 查看崩溃原因"
+
+        - alert: KubePodCrashLooping
+          # 核心逻辑：
+          # 1. 筛选状态原因为 CrashLoopBackOff 的指标
+          # 2. 按命名空间、Pod、容器和集群维度聚合
+          # 3. 使用 for: 5m 确保该状态是持续性的，过滤掉滚动更新时的短暂拉取失败
+          expr: |
+            sum by (namespace, pod, container, cluster) (
+              kube_pod_container_status_waiting_reason{job="kube-state-metrics", reason="CrashLoopBackOff"}
+            ) >= 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod 容器陷入崩溃循环 (CrashLoopBackOff)"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 的 {{ $labels.container }} 容器在最近 5 分钟内一直处于崩溃重启循环中。这通常由程序逻辑错误（Panic）、配置错误、内存溢出（OOM）或依赖服务缺失引起。"
+            # 直接在告警中提供排查命令，提升运维效率
+            action_hint: |
+              1. 查看当前日志: kubectl logs {{ $labels.pod }} -n {{ $labels.namespace }} -c {{ $labels.container }}
+              2. 查看崩溃前日志: kubectl logs {{ $labels.pod }} -n {{ $labels.namespace }} -c {{ $labels.container }} --previous
+              3. 查看事件详情: kubectl describe pod {{ $labels.pod }} -n {{ $labels.namespace }}
+
+        - alert: KubePodCPUUsageHigh
+          # 核心逻辑：
+          # 1. 计算通过 container_cpu_usage_seconds_total 的 5m 速率
+          # 2. 与 kube_pod_container_resource_limits 进行比较
+          # 3. 超过限制的 85% 触发告警
+          expr: |
+            sum by (namespace, pod, container) (
+              irate(container_cpu_usage_seconds_total{job="kubelet", image!="", container!=""}[5m])
+            )
+            / on (namespace, pod, container)
+            sum by (namespace, pod, container) (
+              kube_pod_container_resource_limits{job="kube-state-metrics", resource="cpu"}
+            )
+            * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod CPU 使用率过高 ({{ $labels.container }})"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 的 {{ $labels.container }} 容器 CPU 使用率超过 85% (当前值: {{ $value | humanize }}%)。"
+            action_hint: "请检查该应用的 CPU 限制设置或是否存在性能瓶颈。"
+
+        - alert: KubePodMemoryUsageHigh
+          # 核心逻辑：
+          # 1. 使用 container_memory_working_set_bytes 指标 (OOM Kill 的判断依据)
+          # 2. 与 kube_pod_container_resource_limits 进行比较
+          # 3. 超过限制的 80% 触发告警
+          expr: |
+            sum by (namespace, pod, container) (
+              container_memory_working_set_bytes{job="kubelet", image!="", container!=""}
+            )
+            / on (namespace, pod, container)
+            sum by (namespace, pod, container) (
+              kube_pod_container_resource_limits{job="kube-state-metrics", resource="memory"}
+            )
+            * 100 > 80
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Pod 内存使用率过高 ({{ $labels.container }})"
+            description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 的 {{ $labels.container }} 容器内存使用率超过 80% (当前值: {{ $value | humanize }}%)，存在 OOM 风险。"
+            action_hint: "请考虑增加内存 Limit 或排查是否存在内存泄漏。"
+
+        - alert: KubeDeploymentReplicasMismatch
+          # 核心逻辑：
+          # 1. 期望副本数 > 可用副本数
+          # 2. 且 10分钟内 副本更新状态没有任何变化 (避免滚动更新期间误报)
+          expr: |
+            (
+              kube_deployment_spec_replicas{job="kube-state-metrics",namespace=~".*"}
+              >
+              kube_deployment_status_replicas_available{job="kube-state-metrics",namespace=~".*"}
+            )
+            and
+            (
+              changes(kube_deployment_status_replicas_updated{job="kube-state-metrics",namespace=~".*"}[10m]) == 0
+            )
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Deployment 副本数不匹配 ({{ $labels.deployment }})"
+            description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 期望副本数 与 实际可用副本数不匹配，且已持续 15 分钟无进展。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubedeploymentreplicasmismatch"
+            action_hint: "请检查 Pod 状态，可能存在因配置错误、资源不足或镜像拉取失败导致的调度阻塞。"
+
+        - alert: KubeDeploymentGenerationMismatch
+          # 核心逻辑：
+          # 1. 监测 Deployment 的 status.observedGeneration 不等于 metadata.generation
+          # 2. 这意味着 Deployment Controller 尚未完整处理最新的 Spec 更新
+          expr: |
+            kube_deployment_status_observed_generation{job="kube-state-metrics",namespace=~".*"} != kube_deployment_metadata_generation{job="kube-state-metrics",namespace=~".*"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Deployment 版本不匹配 ({{ $labels.deployment }})"
+            description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 期望版本与观察到的版本不一致已经持续 15 分钟。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubedeploymentgenerationmismatch"
+            action_hint: "请检查 kube-controller-manager 日志中关于 deployment-controller 的报错，或检查是否有 Admission Webhooks 阻止了操作。"
+
+        - alert: KubeDeploymentRolloutStuck
+          # 核心逻辑：
+          # 1. 监测 Deployment 的 Progressing 状态为 false
+          # 2. 这通常意味着 Deployment 在 progressDeadlineSeconds (默认 600s) 内未能完成更新
+          expr: |
+            kube_deployment_status_condition{condition="Progressing",job="kube-state-metrics",namespace=~".*",status="false"} != 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Deployment 滚动更新卡滞 ({{ $labels.deployment }})"
+            description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 已经超过 15 分钟未能完成滚动更新 (Progressing=false)。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubedeploymentrolloutstuck"
+            action_hint: "kubectl describe deployment {{ $labels.deployment }} -n {{ $labels.namespace }} 查看 Status.Conditions 详情。"
+
+        - alert: KubeStatefulSetReplicasMismatch
+          # 核心逻辑：
+          # 1. 期望副本数 > 可用副本数
+          # 2. 且 10分钟内 副本更新状态没有任何变化 (避免滚动更新期间误报)
+          expr: |
+            (
+              kube_statefulset_status_replicas_ready{job="kube-state-metrics",namespace=~".*"} != kube_statefulset_replicas{job="kube-state-metrics",namespace=~".*"}
+            ) 
+            and 
+            (changes(kube_statefulset_status_replicas_updated{job="kube-state-metrics",namespace=~".*"}[10m]) == 0)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "StatefulSet 副本数不匹配 ({{ $labels.statefulset }})"
+            description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} 期望副本数 与 实际可用副本数不匹配，且已持续 15 分钟无进展。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubestatefulsetreplicasmismatch"
+            action_hint: "请检查 Pod 状态，可能存在因配置错误、资源不足或镜像拉取失败导致的调度阻塞。"
+
+        - alert: KubeStatefulSetGenerationMismatch
+          # 核心逻辑：
+          # 1. 监测 StatefulSet 的 status.observedGeneration 不等于 metadata.generation
+          # 2. 这意味着 StatefulSet Controller 尚未完整处理最新的 Spec 更新
+          expr: |
+            kube_statefulset_status_observed_generation{job="kube-state-metrics",namespace=~".*"} != kube_statefulset_metadata_generation{job="kube-state-metrics",namespace=~".*"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "StatefulSet 版本不匹配 ({{ $labels.statefulset }})"
+            description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} 期望版本与观察到的版本不一致已经持续 15 分钟。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubestatefulsetgenerationmismatch"
+            action_hint: "请检查 kube-controller-manager 日志中关于 statefulset-controller 的报错，或检查是否有 Admission Webhooks 阻止了操作。"
+
+        - alert: KubeStatefulSetUpdateNotRolledOut
+          # 核心逻辑：
+          # 1. StatefulSet 更新未 rollout (current revision != update revision)
+          # 2. 且 副本数未更新
+          # 3. 且 5分钟内副本更新状态无变化 (避免滚动更新期间误报)
+          expr: |
+            (
+              max by (namespace, statefulset, job, cluster) (
+                kube_statefulset_status_current_revision{job="kube-state-metrics",namespace=~".*"}
+                unless
+                kube_statefulset_status_update_revision{job="kube-state-metrics",namespace=~".*"}
+              )
+              * on (namespace, statefulset, job, cluster) (
+                kube_statefulset_replicas{job="kube-state-metrics",namespace=~".*"}
+                !=
+                kube_statefulset_status_replicas_updated{job="kube-state-metrics",namespace=~".*"}
+              )
+            )
+            and on (namespace, statefulset, job, cluster) (
+              changes(kube_statefulset_status_replicas_updated{job="kube-state-metrics",namespace=~".*"}[5m]) == 0
+            )
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "StatefulSet 更新卡滞 ({{ $labels.statefulset }})"
+            description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} 更新未能顺利 rollout，且已持续 30 分钟无进展。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubestatefulsetupdatenotrolledout"
+            action_hint: "请检查 Pod 是否就绪，PersistentVolumeClaims 是否绑定，或是否存在 Scheduling 问题。"
+
+        - alert: KubeDaemonSetRolloutStuck
+          # 核心逻辑：
+          # 1. DaemonSet 期望调度数 != 实际调度数 / 更新调度数 / 可用数
+          # 2. 或者 错误调度数 != 0
+          # 3. 且 5分钟内 更新进度无变化
+          expr: |
+            (
+              (kube_daemonset_status_current_number_scheduled{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+              or (kube_daemonset_status_number_misscheduled{job="kube-state-metrics",namespace=~".*"} != 0)
+              or (kube_daemonset_status_updated_number_scheduled{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+              or (kube_daemonset_status_number_available{job="kube-state-metrics",namespace=~".*"} != kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"})
+            )
+            and
+            (changes(kube_daemonset_status_updated_number_scheduled{job="kube-state-metrics",namespace=~".*"}[5m]) == 0)
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "DaemonSet 滚动更新卡滞 ({{ $labels.daemonset }})"
+            description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} 无法在所有节点上调度或更新，且已持续 15 分钟无进展。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubedaemonsetrolloutstuck"
+            action_hint: "请检查节点资源是否充足，或是否存在 Taints 导致无法调度。"
+
+        - alert: KubeDaemonSetNotScheduled
+          # 核心逻辑：
+          # 1. 期望调度数 - 实际调度数 > 0
+          # 2. 意味着部分节点未能成功调度 Pod
+          expr: |
+            kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics",namespace=~".*"}
+            -
+            kube_daemonset_status_current_number_scheduled{job="kube-state-metrics",namespace=~".*"}
+            > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "DaemonSet Pod 无法调度 ({{ $labels.daemonset }})"
+            description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} 有 {{ $value }} 个 Pod 无法在节点上调度。这可能是由于资源不足、节点不可用或 Taints 配置导致的。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubedaemonsetnotscheduled"
+            action_hint: "kubectl get pod -n {{ $labels.namespace }} -l name={{ $labels.daemonset }} -o wide 查看 Pending 状态的 Pod。"
+
+        - alert: KubeDaemonSetMisScheduled
+          # 核心逻辑：
+          # 1. 错误调度数 > 0
+          # 2. 意味着 Pod 运行在了不该运行的节点上 (例如 Node Labels 发生了变化)
+          expr: |
+            kube_daemonset_status_number_misscheduled{job="kube-state-metrics",namespace=~".*"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "DaemonSet Pod 错误调度 ({{ $labels.daemonset }})"
+            description: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} 有 {{ $value }} 个 Pod 运行在不符合目前 nodeSelector 或 Affinity 规则的节点上。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubedaemonsetmisscheduled"
+            action_hint: "请检查 Node Labels 是否发生变更，或 DaemonSet 的 nodeSelector 配置。"
+
+        - alert: KubeJobNotCompleted
+          # 核心逻辑：
+          # 1. Job 启动后超过 12小时 (43200s) 仍处于 Active 状态
+          expr: |
+            time() - max by (namespace, job_name, cluster) (kube_job_status_start_time{job="kube-state-metrics",namespace=~".*"} and kube_job_status_active{job="kube-state-metrics",namespace=~".*"} > 0) > 43200
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Job 执行时间过长 ({{ $labels.job_name }})"
+            description: "Job {{ $labels.namespace }}/{{ $labels.job_name }} 已经运行超过 12 小时。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubejobnotcompleted"
+            action_hint: "kubectl logs jobs/{{ $labels.job_name }} -n {{ $labels.namespace }} 查看日志。"
+
+        - alert: KubeJobFailed
+          # 核心逻辑：
+          # 1. Job 失败次数 > 0 (通常意味着 reached backoffLimit)
+          expr: |
+            kube_job_failed{job="kube-state-metrics",namespace=~".*"} > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Job 执行失败 ({{ $labels.job_name }})"
+            description: "Job {{ $labels.namespace }}/{{ $labels.job_name }} 执行失败 (达到 BackoffLimit)。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubejobfailed"
+            action_hint: "kubectl describe job {{ $labels.job_name }} -n {{ $labels.namespace }} 查看失败原因。"
+
+        - alert: KubeHpaReplicasMismatch
+          # 核心逻辑：
+          # 1. HPA 期望副本数 != 当前副本数
+          # 2. 且 当前副本数 > MinReplicas (非缩容到底)
+          # 3. 且 当前副本数 < MaxReplicas (非扩容到顶)
+          # 4. 且 15分钟内当前副本数无变化
+          expr: |
+            (kube_horizontalpodautoscaler_status_desired_replicas{job="kube-state-metrics",namespace=~".*"} != kube_horizontalpodautoscaler_status_current_replicas{job="kube-state-metrics",namespace=~".*"})
+            and (kube_horizontalpodautoscaler_status_current_replicas{job="kube-state-metrics",namespace=~".*"} > kube_horizontalpodautoscaler_spec_min_replicas{job="kube-state-metrics",namespace=~".*"})
+            and (kube_horizontalpodautoscaler_status_current_replicas{job="kube-state-metrics",namespace=~".*"} < kube_horizontalpodautoscaler_spec_max_replicas{job="kube-state-metrics",namespace=~".*"})
+            and changes(kube_horizontalpodautoscaler_status_current_replicas{job="kube-state-metrics",namespace=~".*"}[15m]) == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "HPA 扩缩容失效 ({{ $labels.horizontalpodautoscaler }})"
+            description: "HPA {{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} 期望副本数与实际副本数不一致，且已持续 15 分钟无进展。这可能意味着底层 Deployment/StatefulSet 无法响应扩缩容请求。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubehpareplicasmismatch"
+            action_hint: "请检查底层 Workload 的状态，或 HPA 配置是否正确。"
+
+        - alert: KubeHpaMaxedOut
+          # 核心逻辑：
+          # 1. HPA 当前副本数 == MaxReplicas
+          # 2. 意味着已经扩容到上限，无法处理更大的流量压力
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{job="kube-state-metrics",namespace=~".*"} == kube_horizontalpodautoscaler_spec_max_replicas{job="kube-state-metrics",namespace=~".*"}
+          for: 45m
+          labels:
+            severity: warning
+          annotations:
+            summary: "HPA 扩容至最大值 ({{ $labels.horizontalpodautoscaler }})"
+            description: "HPA {{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} 已达到最大副本数限制 ({{ $value }})，无法进一步扩容。"
+            runbook_url: "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubehpamaxedout"
+            action_hint: "请评估是否需要增加 MaxReplicas 上限，或检查应用性能是否存在瓶颈。"

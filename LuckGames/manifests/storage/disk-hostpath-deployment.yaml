@@ -1,0 +1,47 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: disk-hostpath-demo-deploy
+  labels:
+    app: disk-hostpath-demo-deploy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: disk-hostpath-demo-deploy
+  template:
+    metadata:
+      labels:
+        app: disk-hostpath-demo-deploy
+    spec:
+      # 选择节点
+      nodeSelector:
+        node.kubernetes.io/storage: "true"
+      # 容忍污点
+      tolerations:
+        - key: "node.kubernetes.io/storage"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      containers:
+        - name: disk-hostpath-demo
+          image: vvoo/admin-box:latest
+          command:
+            - /bin/sh
+            - -c
+            - sleep infinity
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: disk-hostpath
+              mountPath: /mnt
+              subPathExpr: $(POD_NAME)
+      volumes:
+        - name: disk-hostpath
+          hostPath:
+            path: /mnt/disk-hostpath-demo-deploy
+            type: DirectoryOrCreate

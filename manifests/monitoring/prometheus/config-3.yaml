@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      scrape_timeout: 15s
+      
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+      
+      - job_name: 'coredns'
+        static_configs:
+          - targets: ['192.171.205.129:9153', '192.171.205.131:9153']
+      
+      - job_name: 'redis'
+        static_configs:
+          - targets: ['redis.default.svc.cluster.local:9121']

@@ -1,0 +1,83 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: disk-hostpath-demo
+  labels:
+    app: disk-hostpath-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: disk-hostpath-demo
+  template:
+    metadata:
+      labels:
+        app: disk-hostpath-demo
+    spec:
+      # 选择节点
+      nodeSelector:
+        node.kubernetes.io/storage: "true"
+      # 容忍污点
+      tolerations:
+        - key: "node.kubernetes.io/storage"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      containers:
+        - name: disk-hostpath-demo
+          image: vvoo/admin-box:latest
+          command:
+            - /bin/sh
+            - -c
+            - sleep infinity
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: disk-hostpath
+              mountPath: /data
+              subPathExpr: $(POD_NAME)
+            - name: nas-demo
+              mountPath: /nas
+            - name: disk-demo
+              mountPath: /disk
+      volumes:
+        - name: disk-hostpath
+          hostPath:
+            path: /mnt
+            type: DirectoryOrCreate
+        - name: nas-demo
+          persistentVolumeClaim:
+            claimName: nas-demo-pvc
+        - name: disk-demo
+          persistentVolumeClaim:
+            claimName: disk-demo-pvc
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: disk-demo-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: "alicloud-disk-topology-alltype"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nas-demo-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: "alicloud-nas-subpath"

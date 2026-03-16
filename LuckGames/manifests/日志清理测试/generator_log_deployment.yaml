@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "clean-log-demo"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "clean-log-demo"
+  template:
+    metadata:
+      labels:
+        app: "clean-log-demo"
+    spec:
+      containers:
+        - name: "clean-log-demo"
+          image: centos:7.9.2009
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - "sleep infinity"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name:  data-volume
+              mountPath:  /mnt
+              subPathExpr: $(POD_NAME)
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: "clean-log-demo-pvc"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: "clean-log-demo-pvc"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: alicloud-nas-subpath
