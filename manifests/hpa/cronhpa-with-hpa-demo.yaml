@@ -1,0 +1,30 @@
+apiVersion: autoscaling.alibabacloud.com/v1beta1
+kind: CronHorizontalPodAutoscaler
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: stressapp-cronhpa-with-hpa
+spec:
+  scaleTargetRef: # 设置为HPA资源内容
+    apiVersion: apps/v1
+    kind: Deployment
+    name: stressapp-hpa
+  jobs:
+    # - name: "scale-down"
+    #   schedule: "30 */1 * * * *" # 每分钟的第30秒触发一次（如 08:00:30, 08:01:30）。
+    #   targetSize: 1 # 目标副本数
+    #   runOnce: false # 任务执行模式（是否仅运行一次），默认false
+    # - name: "scale-up"
+    #   schedule: "0 */1 * * * *" # 每分钟的第0秒触发一次（如 08:00:00, 08:01:00）。
+    #   targetSize: 3 # 目标副本数
+    #   runOnce: false
+    - name: "scale-up-18pm"
+      schedule: "0 0 18 * * *"
+      targetSize: 3
+      runOnce: false
+    - name: "scale-down-06am"
+      schedule: "0 0 06 * * *"
+      targetSize: 1
+      runOnce: false
+
+# 参考文档：https://www.alibabacloud.com/help/zh/ack/ack-managed-and-ack-dedicated/user-guide/make-cronhpa-compatible-with-hpa

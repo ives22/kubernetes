@@ -1,0 +1,23 @@
+apiVersion: autoscaling.alibabacloud.com/v1beta1
+kind: CronHorizontalPodAutoscaler
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: stressapp-cronhpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: stressapp-hpa # 关联的工作负载名称
+  excludeDates: # 任务排除日期（Cron 格式），以下日期不执行扩缩容
+    - "* * * 15 11 *" # 排除11月15日
+    - "* * * * * 5" # 排除星期五
+  jobs:
+    - name: "scale-down"
+      schedule: "30 */1 * * * *" # 每分钟的第30秒触发一次（如 08:00:30, 08:01:30）。
+      targetSize: 1 # 目标副本数
+      runOnce: false # 任务执行模式（是否仅运行一次），默认false
+    - name: "scale-up"
+      schedule: "0 */1 * * * *" # 每分钟的第0秒触发一次（如 08:00:00, 08:01:00）。
+      targetSize: 3 # 目标副本数
+      runOnce: false

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stressapp-hpa
+  labels:
+    app: stressapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: stressapp
+  template:
+    metadata:
+      labels:
+        app: stressapp
+    spec:
+      containers:
+        - name: stressapp
+          image: vvoo/stressapp:v1.0
+          ports:
+            - name: http
+
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stressapp
+spec:
+  type: ClusterIP
+  selector:
+    app: stressapp
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
