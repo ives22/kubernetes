@@ -6,8 +6,8 @@ metadata:
   name: stressapp-cronhpa-with-hpa
 spec:
   scaleTargetRef: # 设置为HPA资源内容
-    apiVersion: apps/v1
-    kind: Deployment
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
     name: stressapp-hpa
   jobs:
     # - name: "scale-down"

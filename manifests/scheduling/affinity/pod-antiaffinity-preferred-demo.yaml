@@ -1,0 +1,48 @@
+# Pod 反亲和性（Pod Anti-Affinity）Preferred 策略示例
+# 用途：尽量将带有相同标签的 Pod 分散调度到不同节点上
+# 场景：提高应用的高可用性，同时允许调度灵活性（节点不足时仍可调度）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-antiaffinity-preferred
+spec:
+  # 期望运行的 Pod 副本数量
+  replicas: 4
+  selector:
+    # 选择器用于匹配属于此 Deployment 的 Pod
+    matchLabels:
+      app: demoapp
+      ctlr: pod-antiaffinity-preferred
+  template:
+    metadata:
+      # Pod 模板的标签，用于被亲和性规则匹配
+      labels:
+        app: demoapp
+        ctlr: pod-antiaffinity-preferred
+    spec:
+      containers:
+        - name: demoapp
+          image: vvoo/demoapp:v1.0
+      # 亲和性配置，用于控制 Pod 的调度策略
+      affinity:
+        # Pod 反亲和性：控制 Pod 与其他 Pod 的分布关系
+        podAntiAffinity:
+          # Preferred 策略：软约束，尽量满足但不强制
+          # 与 Required 策略不同，Preferred 策略不满足时 Pod 仍可被调度
+          # 适用于希望分散部署但允许例外情况的场景
+          preferredDuringSchedulingIgnoredDuringExecution:
+            # 偏好规则列表，可配置多个规则
+            - weight: 100
+              # 反亲和性规则项
+              podAffinityTerm:
+                labelSelector:
+                  # 标签选择器，用于匹配目标 Pod
+                  matchExpressions:
+                    # 匹配表达式：选择标签 key 为 app，值为 demoapp 的 Pod
+                    - key: app
+                      operator: In
+                      values: ["demoapp"]
+                # 拓扑键：定义反亲和性的作用范围
+                # kubernetes.io/hostname 表示以节点为单位，尽量确保同一节点只有一个 demoapp Pod
+                # 其他可选值：topology.kubernetes.io/zone（可用区级别）、topology.kubernetes.io/region（区域级别）
+                topologyKey: kubernetes.io/hostname

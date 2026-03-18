@@ -1,0 +1,22 @@
+apiVersion: autoscaling.alibabacloud.com/v1beta1
+kind: CronHorizontalPodAutoscaler
+metadata:
+  labels:
+    app: wallet-center
+  name: cronhpa-wallet-center
+spec:
+  scaleTargetRef:
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    name: wallet-center
+  jobs:
+    # 北京时间 0:00（晚上 24 点）扩容到 5 个
+    - name: "scale-up-midnight"
+      schedule: "0 0 0 * * *"
+      targetSize: 5
+      runOnce: false
+    # 北京时间 3:00 缩容到 3 个
+    - name: "scale-down-3am"
+      schedule: "0 0 3 * * *"
+      targetSize: 3
+      runOnce: false

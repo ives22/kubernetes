@@ -1,0 +1,44 @@
+# Pod 反亲和性（Pod Anti-Affinity）Required 策略示例
+# 用途：确保带有相同标签的 Pod 不会被调度到同一个节点上
+# 场景：提高应用的高可用性，避免单点故障
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-antiaffinity-required
+spec:
+  # 期望运行的 Pod 副本数量
+  replicas: 4
+  selector:
+    # 选择器用于匹配属于此 Deployment 的 Pod
+    matchLabels:
+      app: demoapp
+      ctlr: pod-antiaffinity-required
+  template:
+    metadata:
+      # Pod 模板的标签，用于被亲和性规则匹配
+      labels:
+        app: demoapp
+        ctlr: pod-antiaffinity-required
+    spec:
+      containers:
+        - name: demoapp
+          image: vvoo/demoapp:v1.0
+      # 亲和性配置，用于控制 Pod 的调度策略
+      affinity:
+        # Pod 反亲和性：控制 Pod 与其他 Pod 的分布关系
+        podAntiAffinity:
+          # Required 策略：硬约束，必须满足的条件，否则 Pod 不会被调度
+          # 与 Preferred 策略不同，Required 策略不满足时调度会失败
+          requiredDuringSchedulingIgnoredDuringExecution:
+            # 反亲和性规则列表
+            - labelSelector:
+                # 标签选择器，用于匹配目标 Pod
+                matchExpressions:
+                  # 匹配表达式：选择标签 key 为 app，值为 demoapp 的 Pod
+                  - key: app
+                    operator: In
+                    values: ["demoapp"]
+              # 拓扑键：定义反亲和性的作用范围
+              # kubernetes.io/hostname 表示以节点为单位，确保同一节点的 hostname 下只有一个 demoapp Pod
+              # 其他可选值：topology.kubernetes.io/zone（可用区级别）、topology.kubernetes.io/region（区域级别）
+              topologyKey: kubernetes.io/hostname
