@@ -1,0 +1,63 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-dcdn.rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: api-dcdn.rules
+      rules:
+        - alert: AliyunDcdnQpsDayOverDayDrop
+          annotations:
+            summary: 'CDN 域名 QPS 同比骤降: {{ $labels.instance_id }}'
+            description: '检测到域名 {{ $labels.instance_id }} 最新 QPS 异常！相比昨天同一时刻跌幅超过 30%。'
+          expr: |
+            (
+              # 1. 获取最近 5 分钟内能抓到的“最新”的一个 1 分钟点
+              # (用 [5m] 是为了容忍阿里云 API 的延迟，防止抓不到数据，但 last_over_time 保证了只要拿到，就是最新的那根暴跌的柱子)
+              last_over_time(aliyun_dcdn_dcdn_qps_http_maximum{product="dcdn", instance_id=~"^(h5|api)[.].+$"}[5m])
+              /
+              # 2. 基线：昨天同一时刻 5 分钟窗口的平均值
+              avg_over_time(aliyun_dcdn_dcdn_qps_http_maximum{product="dcdn", instance_id=~"^(h5|api)[.].+$"}[5m] offset 1d)
+            ) < 0.70
+
+            and
+
+            (
+              # 3. 防误报：昨天这个时候流量得大于 50
+              avg_over_time(aliyun_dcdn_dcdn_qps_http_maximum{product="dcdn", instance_id=~"^(h5|api)[.].+$"}[5m] offset 1d) > 50
+            )
+          for: 2m  # 因为 last_over_time 已经很敏捷了，评估时间缩短到 2 周期
+          labels:
+            severity: critical
+            # 路由标签
+            channel: dcdn_team
+        
+        - alert: AliyunDcdnQpsShortTermDrop
+          annotations:
+            summary: 'CDN 域名 QPS 短时断崖下跌: {{ $labels.instance_id }}'
+            description: '检测到域名 {{ $labels.instance_id }} 最新 QPS 相比 15 分钟前暴跌超过 30%！'
+          expr: |
+            (
+              # 1. 抓取当前最新的一个点
+              last_over_time(aliyun_dcdn_dcdn_qps_http_maximum{product="dcdn", instance_id=~"^(h5|api)[.].+$"}[5m])
+              /
+              # 2. 对比：15 分钟前那个时刻的最新点 (用 15m 是因为 CDN 流量不像 RPC 那么陡，留出足够的斜坡时间)
+              last_over_time(aliyun_dcdn_dcdn_qps_http_maximum{product="dcdn", instance_id=~"^(h5|api)[.].+$"}[5m] offset 15m)
+            ) < 0.70  # 30% 的跌幅已经是非常严重的异常了，CDN 流量不像 RPC 那么陡，留出足够的斜坡时间
+
+            and
+
+            (
+              # 3. 基数保护
+              last_over_time(aliyun_dcdn_dcdn_qps_http_maximum{product="dcdn", instance_id=~"^(h5|api)[.].+$"}[5m] offset 15m) > 50
+            )
+          for: 2m
+          labels:
+            severity: critical
+            # 路由标签
+            channel: dcdn_team
+
+

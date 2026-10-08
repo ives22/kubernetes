@@ -1,0 +1,81 @@
+# 全局限流， redis 组件安装配置
+
+###########  Redis 组件安装配置 ###########
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: redis-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: redis-system
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - image: redis:6.0.6
+        imagePullPolicy: IfNotPresent
+        name: redis
+        resources:
+          limits:
+            cpu: 1500m
+            memory: 512Mi
+          requests:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: redis-system
+  labels:
+    app: redis
+  annotations:
+spec:
+  ports:
+  - name: redis
+    port: 6379
+    protocol: TCP
+    targetPort: 6379
+  selector:
+    app: redis
+
+
+
+########### Envoy Gateway 全局限流配置 ###########
+# 手动更新 configmap，添加 redis 配置
+# k get cm envoy-gateway-config  -n envoy-gateway-system  -oyaml
+
+# kubectl edit cm envoy-gateway-config  -n envoy-gateway-system
+# apiVersion: v1
+# kind: ConfigMap
+# metadata:
+#   name: envoy-gateway-config
+#   namespace: envoy-gateway-system
+# data:
+#   envoy-gateway.yaml: |
+#     apiVersion: gateway.envoyproxy.io/v1alpha1
+#     kind: EnvoyGateway
+#     ... keep the existing configuration ...
+      # 添加这部分配置
+#     rateLimit:
+#       backend:
+#         type: Redis
+#         redis:
+#           url: redis.redis-system.svc.cluster.local:6379
+
+# 强制重启生效
+# kubectl rollout restart deployment envoy-gateway -n envoy-gateway-system

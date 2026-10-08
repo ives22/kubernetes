@@ -1,0 +1,99 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMCluster
+metadata:
+  name: vmcluster
+  namespace: vm # 请根据实际情况修改命名空间
+spec:
+  # 1. 全局配置
+  # 数据保留周期，支持格式如 "30d" (天), "12M" (月), "1y" (年)
+  retentionPeriod: "30d"
+  
+  # 数据双写副本数（生产核心保障）。设置为 2 意味着每份数据会写入 2 个不同的 vmstorage 节点。
+  # 即使有 1 个 vmstorage 节点宕机或重建，查询依然可用且数据不会丢失。
+  replicationFactor: 2 
+
+  # 2. vmstorage: 数据存储节点 (有状态，重内存与磁盘IO)
+  vmstorage:
+    # 因为配置了 replicationFactor=2，存储节点至少需要 2 个，推荐 3 个以上以平摊压力
+    replicaCount: 2
+    storageDataPath: "/vm-data"
+    # 资源规划（请根据实际指标写入量调整）
+    resources:
+      requests:
+        cpu: "1"
+        memory: "4Gi"
+      limits:
+        cpu: "2"
+        memory: "8Gi" # VM 高度依赖内存缓存索引，建议尽可能多给内存
+    storage:
+      volumeClaimTemplate:
+        spec:
+          # 生产环境强烈建议使用 NVMe/SSD 类型的 StorageClass，否则高并发写入会造成 IO 瓶颈
+          storageClassName: "alicloud-disk-essd"
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 100Gi
+    # 调度策略：强制反亲和性，确保 vmstorage 不会被调度到同一个 K8s Node 上
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vmstorage
+            topologyKey: "kubernetes.io/hostname"
+
+  # 3. vmselect: 查询处理节点 (无状态，重 CPU，建议挂载少量磁盘用于查询缓存)
+  vmselect:
+    replicaCount: 2
+    # 生产优化：配置查询缓存路径，加速对历史大量数据的重复查询性能
+    cacheMountPath: "/select-cache"
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "alicloud-disk-essd"
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi # 缓存不需要太大，20G-50G 即可
+    resources:
+      requests:
+        cpu: "1"
+        memory: "2Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: vmselect
+              topologyKey: "kubernetes.io/hostname"
+
+  # 4. vminsert: 写入接收网关 (无状态，重 CPU 和网络)
+  vminsert:
+    replicaCount: 2
+    resources:
+      requests:
+        cpu: "1"
+        memory: "1Gi"
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+    # 配置额外参数：限制 vminsert 拒绝过大的请求，保护后端 vmstorage
+    extraArgs:
+      maxLabelsPerTimeseries: "30"
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: vminsert
+              topologyKey: "kubernetes.io/hostname"

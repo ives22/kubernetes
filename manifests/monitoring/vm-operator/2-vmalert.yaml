@@ -1,0 +1,48 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMAlert
+metadata:
+  name: vmalert
+  namespace: vm
+spec:
+  # 1. 高可用与副本
+  # 生产环境建议设置为 2 保证高可用。
+  # vmalert 的两个副本会同时评估规则并发送相同的告警给 Alertmanager。
+  # 别担心重复，因为 Alertmanager 内部会根据告警指纹(fingerprint)自动去重合并。
+  replicaCount: 1
+  
+  # 全局默认规则评估周期
+  evaluationInterval: "1m"
+  
+  # 2. 查数据：告警数据源 (指向 vmselect)
+  # 注意：在 VM 集群版中，必须携带租户 ID（这里是 /select/0/prometheus）
+  datasource:
+    url: "http://vmselect-vmcluster.vm.svc.cluster.local:8481/select/0/prometheus"
+    
+  # 3. 写状态：告警状态回写 (指向 vminsert，生产环境强烈推荐)
+  # vmalert 会自动生成名为 ALERTS 和 ALERTS_FOR_STATE 的监控指标，并写回 VM 中。
+  # 这样您就可以在 Grafana 里查询历史上何时触发过告警，以及某个告警的状态变化。
+  remoteWrite:
+    url: "http://vminsert-vmcluster.vm.svc.cluster.local:8480/insert/0/prometheus"
+
+  # 4. 发告警：通知目标 (指向您已有的 Alertmanager)
+  notifiers:
+    # ！！！请务必将下面这个 URL 替换为您集群中真实的 Alertmanager service 地址！！！
+    - url: "http://kube-prometheus-stack-alertmanager.monitoring.svc:9093" 
+      
+  # 5. 规则发现：VMAlert 会在全集群或当前 Namespace 中寻找带有所选 Label 的 VMRule 资源
+  ruleSelector:
+    matchLabels:
+      vm-alert-rule: "true"
+  
+  # 6. 规则发现：可选，指定 VMRule 资源所在的 Namespace, 这里的{}表示所有 Namespace
+  ruleNamespaceSelector: {}
+
+  # 7. 生产资源限制
+  # vmalert 非常轻量，即使在超大规模下消耗的资源也极小
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"

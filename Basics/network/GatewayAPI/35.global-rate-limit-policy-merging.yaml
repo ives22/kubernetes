@@ -1,0 +1,138 @@
+# Envoy Gateway Global Rate Limit 全局速率限制
+# 限流策略合并，网关级别的限流策略和路由级别的限流策略合并，最终生效的限流策略是两者的交集
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+    service: backend
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: backend
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1
+    spec:
+      serviceAccountName: backend
+      containers:
+        - image: vvoo/demoapp:v2.1
+          imagePullPolicy: IfNotPresent
+          name: backend
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "30Mi"
+            limits:
+              cpu: "20m"
+              memory: "50Mi"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+
+#  定义全局限流策略，限制 所有请求每秒最多 100 次
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: global-backendtrafficpolicy
+  namespace: envoy-gateway-system # 注意，这个是网关的命名空间，不能是默认的命名空间，因为该规则是网关级别的规则，网关级别的规则必须在网关的命名空间下
+spec:
+  rateLimit:
+    global:
+      rules:
+      - clientSelectors:
+        - sourceCIDR:
+            type: Distinct
+            value: 0.0.0.0/0
+        limit:
+          requests: 100
+          unit: Second
+        shared: true
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: eg
+# 定义路由级别的限流策略，限制 每分钟最多 5 次
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: route-backendtrafficpolicy
+spec:
+  mergeType: StrategicMerge
+  rateLimit:
+    global:
+      rules:
+      - clientSelectors:
+        - sourceCIDR:
+            type: Distinct
+            value: 0.0.0.0/0
+        limit:
+          requests: 5
+          unit: Minute
+        shared: false
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: signup-service-httproute
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: signup-service-httproute
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg
+      namespace: envoy-gateway-system
+  hostnames:
+    - "eg-example.tluapitest.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: backend
+          port: 80
+
+# 这里 gateway 是 2 副本
+# 这里 定义了两个限流策略，一个是网关级别的限流策略，限制所有请求每秒最多 100 次，另一个是路由级别的限流策略，限制每分钟最多 5 次。最终生效的限流策略是两者的交集，即每分钟最多 5 次。
+
+# for i in {1..7}; do curl -I --header "Host: eg-example.tluapitest.com" http://eg-example.tluapitest.com/ ; sleep 1 ; done

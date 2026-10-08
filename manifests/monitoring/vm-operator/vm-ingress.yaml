@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: victoria-metrics-ingress
+  namespace: vm
+spec:
+  ingressClassName: nginx # 根据你的集群实际情况修改，例如 traefik, higress 等
+  rules:
+    # ---------------------------------------------
+    # 1. 用于外部访问 vmalert (查看规则和告警状态)
+    # ---------------------------------------------
+    - host: vmalert.doji.game  # 【请修改为你的域名】
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vmalert-vmalert # 您的 vmalert service 名称
+                port:
+                  number: 8080        # vmalert 默认端口是 8080
+                  
+    # ---------------------------------------------
+    # 2. 用于外部访问 vmselect (通过 VMUI 执行查询语句)
+    # ---------------------------------------------
+    - host: vmselect.doji.game # 【请修改为你的域名】
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vmselect-vmcluster # 您的 vmselect service 名称
+                port:
+                  number: 8481           # vmselect 默认端口是 8481

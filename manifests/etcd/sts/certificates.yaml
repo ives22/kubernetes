@@ -1,0 +1,92 @@
+# cert-manager resources for the etcd StatefulSet in namespace default.
+# Install cert-manager first:
+# helm repo add jetstack https://charts.jetstack.io
+# helm upgrade --install cert-manager jetstack/cert-manager \
+#   --namespace cert-manager --create-namespace --set crds.enabled=true
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: etcd-selfsigned-bootstrap
+  namespace: default
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-ca
+  namespace: default
+spec:
+  secretName: etcd-ca
+  isCA: true
+  commonName: etcd-ca
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: etcd-selfsigned-bootstrap
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: etcd-ca-issuer
+  namespace: default
+spec:
+  ca:
+    secretName: etcd-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-server
+  namespace: default
+spec:
+  secretName: etcd-server-tls
+  commonName: etcd
+  dnsNames:
+  - etcd
+  - etcd-client
+  - etcd-client.default
+  - etcd-client.default.svc
+  - etcd-client.default.svc.cluster.local
+  - etcd.default
+  - etcd.default.svc
+  - etcd.default.svc.cluster.local
+  - etcd-0.etcd
+  - etcd-0.etcd.default
+  - etcd-0.etcd.default.svc
+  - etcd-0.etcd.default.svc.cluster.local
+  - etcd-1.etcd
+  - etcd-1.etcd.default
+  - etcd-1.etcd.default.svc
+  - etcd-1.etcd.default.svc.cluster.local
+  - etcd-2.etcd
+  - etcd-2.etcd.default
+  - etcd-2.etcd.default.svc
+  - etcd-2.etcd.default.svc.cluster.local
+  usages:
+  - digital signature
+  - key encipherment
+  - server auth
+  - client auth
+  issuerRef:
+    name: etcd-ca-issuer
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: etcd-client
+  namespace: default
+spec:
+  secretName: etcd-client-tls
+  commonName: etcd-client
+  usages:
+  - digital signature
+  - key encipherment
+  - client auth
+  issuerRef:
+    name: etcd-ca-issuer
+    kind: Issuer

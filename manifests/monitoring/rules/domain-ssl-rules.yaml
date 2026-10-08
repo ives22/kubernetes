@@ -11,7 +11,7 @@ spec:
       rules:
         # 1. 严重告警：证书将在3天内过期
         - alert: SSLCertExpiringSoonCritical
-          expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 3
+          expr: (probe_ssl_earliest_cert_expiry - time()) < 259200
           for: 10m
           labels:
             severity: critical
@@ -21,7 +21,7 @@ spec:
 
         # 2. 警告告警：证书将在7天内过期
         - alert: SSLCertExpiringSoonWarning
-          expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7
+          expr: (probe_ssl_earliest_cert_expiry - time()) < 604800
           for: 10m
           labels:
             severity: warning

@@ -1,0 +1,153 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"monitoring.coreos.com/v1","kind":"PrometheusRule","metadata":{"annotations":{},"name":"sls-rules","namespace":"monitoring"},"spec":{"groups":[{"name":"sls.rules","rules":[{"expr":"avg_over_time(sls_histogram_query_count{query_tag=\"error\", logstore=\"client-log\"}[5m])","record":"client_error_avg_5m"},{"alert":"SLSQueryErrorSurge_Client","annotations":{"callUser":"Loya987","description":"检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误数: {{ $value }} 次, 已大幅超过前1小时平均水平\n","summary":"服务日志错误数激增 (实例: {{ $labels.histogram_name }})"},"expr":"# 条件 1: 基础门槛，过滤低频小错\nclient_error_avg_5m \u003e 50 and\n# 条件 2: 突破背景噪声 (当前均值 \u003e 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\nclient_error_avg_5m \u003e\n(\n  avg_over_time(client_error_avg_5m[1h] offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 \u003e 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警 \nclient_error_avg_5m \u003e\n(\n  max_over_time(client_error_avg_5m[1h] offset 5m) * 1.05\n)\n","for":"2m","labels":{"category":"sls","severity":"warning"}},{"expr":"avg_over_time(sls_histogram_query_count{query_tag=\"error\", logstore=~\"game.*\"}[5m])","record":"game_error_avg_5m"},{"alert":"SLSQueryErrorSurge_Game","annotations":{"callUser":"pool128","description":"检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误总数: {{ $value }} 次, 已大幅超过前1小时平均水平\n","summary":"服务日志错误数激增 (实例: {{ $labels.histogram_name }})"},"expr":"# 条件 1: 基础门槛，过滤低频小错\ngame_error_avg_5m \u003e 50 and\n# 条件 2: 突破背景噪声 (当前均值 \u003e 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\ngame_error_avg_5m \u003e\n(\n  avg_over_time(game_error_avg_5m[1h] offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 \u003e 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警 \ngame_error_avg_5m \u003e\n(\n  max_over_time(game_error_avg_5m[1h] offset 5m) * 1.05\n)\n","for":"2m","labels":{"category":"sls","severity":"warning"}},{"expr":"avg_over_time(sls_histogram_query_count{query_tag=\"error\", logstore=~\"web.*\"}[5m])","record":"web_error_avg_5m"},{"alert":"SLSQueryErrorSurge_Web","annotations":{"callUser":"Fran_995","description":"检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误总数: {{ $value }} 次, 已大幅超过前1小时平均水平\n","summary":"服务日志错误数激增 (实例: {{ $labels.histogram_name }})"},"expr":"# 条件 1: 基础门槛，过滤低频小错\nweb_error_avg_5m \u003e 50 and\n# 条件 2: 突破背景噪声 (当前均值 \u003e 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\nweb_error_avg_5m \u003e\n(\n  avg_over_time(web_error_avg_5m[1h] offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 \u003e 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警 \nweb_error_avg_5m \u003e\n(\n  max_over_time(web_error_avg_5m[1h] offset 5m) * 1.05\n)\n","for":"2m","labels":{"category":"sls","severity":"warning"}},{"expr":"avg_over_time(sls_histogram_query_count{query_tag=\"error\", logstore!~\"^(game|web).*|^client-log$\"}[5m])","record":"api_error_avg_5m"},{"alert":"SLSQueryErrorSurge_Api","annotations":{"callUser":"Cloud9989","description":"检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误总数: {{ $value }} 次, 已大幅超过前1小时平均水平\n","summary":"服务日志错误数激增 (实例: {{ $labels.histogram_name }})"},"expr":"# 条件 1: 基础门槛，过滤低频小错\napi_error_avg_5m \u003e 50 and\n# 条件 2: 突破背景噪声 (当前均值 \u003e 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\napi_error_avg_5m \u003e\n(\n  avg_over_time(api_error_avg_5m[1h] offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 \u003e 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警 \napi_error_avg_5m \u003e\n(\n  max_over_time(api_error_avg_5m[1h] offset 5m) * 1.05\n)\n","for":"2m","labels":{"category":"sls","severity":"warning"}},{"alert":"SLSCronJobExecDetected","annotations":{"callUser":"Gawain","description":"job-executor任务执行失败，（任务: {{ $labels.query_tag }}）, 请通过sls控制台查询具体错误信息","summary":"job-executor执行失败 (实例: {{ $labels.histogram_name }})"},"expr":"max_over_time(sls_histogram_query_count{logstore=\"cronjob\"}[1m]) \u003e 0","for":"0m","labels":{"category":"sls","severity":"warning"}},{"alert":"SLSStatusCodeNot200High","annotations":{"callUser":"Cloud9989","description":"最近 1 分钟内的非 200 状态码总计超过 5, 当前值: {{ $value }}","summary":"请求运营商 非 200 状态码过多 (实例: {{ $labels.histogram_name }})"},"expr":"sum_over_time(sls_histogram_query_count{query_tag=\"status_code_not_200\"}[1m]) \u003e 5","for":"3m","labels":{"category":"sls","severity":"critical"}},{"alert":"SLSHighLatencyRatio","annotations":{"callUser":"Cloud9989","description":"检测到 请求运营商耗时 大于 1000毫秒 占比超过 5%，\n当前比例: {{ $value | printf \"%.2f\" }}%\n","summary":"请求运营商耗时 \u003e= 1000 比例过高 (实例: {{ $labels.histogram_name }})"},"expr":"(\n  sum by (project, logstore, histogram_name) (sum_over_time(sls_histogram_query_count{query_tag=\"cost_gte_1000\"}[5m]))\n  /\n  sum by (project, logstore, histogram_name) (sum_over_time(sls_histogram_query_count{query_tag=~\"cost.*\"}[5m]))\n) * 100 \u003e 5\nand sum by (project, logstore, histogram_name) (sum_over_time(sls_histogram_query_count{query_tag=~\"cost.*\"}[5m])) \u003e 0\n","for":"2m","labels":{"category":"sls","severity":"warning"}},{"alert":"SLSHighLatency","annotations":{"callUser":"Cloud9989","description":"检测到 请求运营商耗时 \u003e= 1000 数量异常激增！最近5分钟错误数: {{ $value }} 次, 大于过去15分钟内峰值\n","summary":"请求运营商耗时 \u003e= 1000 数量 激增(实例: {{ $labels.histogram_name }})"},"expr":"sum_over_time(sls_histogram_query_count{query_tag=\"cost_gte_1000\"}[5m]) \u003e 50 and\n(sls_histogram_query_count{query_tag=\"cost_gte_1000\"} \u003e max_over_time(sls_histogram_query_count{query_tag=\"cost_gte_1000\"}[15m]) * 1.05)\n","for":"0m","labels":{"category":"sls","severity":"warning"}},{"alert":"SLSSlowCall","annotations":{"callUser":"Gawain","description":"检测到 grpc slowcall错误数量异常激增！最近5分钟错误数: {{ $value }} 次, 大于过去15分钟内峰值\n","summary":"grpc slowcall 错误激增 (实例: {{ $labels.histogram_name }})"},"expr":"sum_over_time(sls_histogram_query_count{query_tag=\"slow_call\"}[5m]) \u003e 50 and\n(sls_histogram_query_count{query_tag=\"slow_call\"} \u003e max_over_time(sls_histogram_query_count{query_tag=\"slow_call\"}[15m]) * 1.05)\n","for":"0m","labels":{"category":"sls","severity":"warning"}}]}]}}
+    prometheus-operator-validated: "true"
+  creationTimestamp: "2025-12-02T06:35:06Z"
+  generation: 37
+  labels:
+    release: kube-prometheus-stack
+  name: sls-rules
+  namespace: monitoring
+  resourceVersion: "512404304"
+  uid: cb1e6d1a-ab15-4c02-a512-8d3642bbaeab
+spec:
+  groups:
+  - name: sls.rules
+    rules:
+    - expr: avg_over_time(sls_histogram_query_count{query_tag="error", logstore="client-log"}[5m])
+      record: client_error_avg_5m
+    - alert: SLSQueryErrorSurge_Client
+      annotations:
+        callUser: Lota
+        description: |
+          检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误数: {{ $value }} 次, 已大幅超过前1小时平均水平
+        summary: '服务日志错误数激增 (实例: {{ $labels.histogram_name }})'
+      expr: "# 条件 1: 基础门槛，过滤低频小错\nclient_error_avg_5m > 50 and\n# 条件 2: 突破背景噪声 (当前均值
+        > 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\nclient_error_avg_5m >\n(\n  avg_over_time(client_error_avg_5m[1h]
+        offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 > 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警
+        \nclient_error_avg_5m >\n(\n  max_over_time(client_error_avg_5m[1h] offset
+        5m) * 1.05\n)\n"
+      for: 2m
+      labels:
+        category: sls
+        severity: warning
+    - expr: avg_over_time(sls_histogram_query_count{query_tag="error", logstore=~"game.*"}[5m])
+      record: game_error_avg_5m
+    - alert: SLSQueryErrorSurge_Game
+      annotations:
+        callUser: Pote
+        description: |
+          检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误总数: {{ $value }} 次, 已大幅超过前1小时平均水平
+        summary: '服务日志错误数激增 (实例: {{ $labels.histogram_name }})'
+      expr: "# 条件 1: 基础门槛，过滤低频小错\ngame_error_avg_5m > 50 and\n# 条件 2: 突破背景噪声 (当前均值
+        > 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\ngame_error_avg_5m >\n(\n  avg_over_time(game_error_avg_5m[1h]
+        offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 > 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警
+        \ngame_error_avg_5m >\n(\n  max_over_time(game_error_avg_5m[1h] offset 5m)
+        * 1.05\n)\n"
+      for: 2m
+      labels:
+        category: sls
+        severity: warning
+    - expr: avg_over_time(sls_histogram_query_count{query_tag="error", logstore=~"web.*"}[5m])
+      record: web_error_avg_5m
+    - alert: SLSQueryErrorSurge_Web
+      annotations:
+        callUser: Fraser
+        description: |
+          检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误总数: {{ $value }} 次, 已大幅超过前1小时平均水平
+        summary: '服务日志错误数激增 (实例: {{ $labels.histogram_name }})'
+      expr: "# 条件 1: 基础门槛，过滤低频小错\nweb_error_avg_5m > 50 and\n# 条件 2: 突破背景噪声 (当前均值
+        > 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\nweb_error_avg_5m >\n(\n  avg_over_time(web_error_avg_5m[1h]
+        offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 > 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警
+        \nweb_error_avg_5m >\n(\n  max_over_time(web_error_avg_5m[1h] offset 5m) *
+        1.05\n)\n"
+      for: 2m
+      labels:
+        category: sls
+        severity: warning
+    - expr: avg_over_time(sls_histogram_query_count{query_tag="error", logstore!~"^(game|web).*|^client-log$"}[5m])
+      record: api_error_avg_5m
+    - alert: SLSQueryErrorSurge_Api
+      annotations:
+        callUser: Gage
+        description: |
+          检测到 {{ $labels.histogram_name }} 服务的日志错误数激增, 最近5分钟错误总数: {{ $value }} 次, 已大幅超过前1小时平均水平
+        summary: '服务日志错误数激增 (实例: {{ $labels.histogram_name }})'
+      expr: "# 条件 1: 基础门槛，过滤低频小错\napi_error_avg_5m > 50 and\n# 条件 2: 突破背景噪声 (当前均值
+        > 历史均值的 1.4 倍); 过滤 随在线人数增加而产生的正常错误数变化\napi_error_avg_5m >\n(\n  avg_over_time(api_error_avg_5m[1h]
+        offset 5m) * 1.4\n) and\n# 条件 3: 水位记忆与抑制 (当前均值 > 历史峰值的 1.05 倍); 确保只有在故障恶化（破纪录）时才重复告警
+        \napi_error_avg_5m >\n(\n  max_over_time(api_error_avg_5m[1h] offset 5m) *
+        1.05\n)\n"
+      for: 2m
+      labels:
+        category: sls
+        severity: warning
+        
+    - alert: SLSCronJobExecDetected
+      annotations:
+        callUser: Gage
+        description: 'job-executor任务执行失败，（任务: {{ $labels.query_tag }}）, 请通过sls控制台查询具体错误信息'
+        summary: 'job-executor执行失败 (实例: {{ $labels.histogram_name }})'
+      expr: max_over_time(sls_histogram_query_count{logstore="cronjob"}[1m]) > 0
+      for: 0m
+      labels:
+        category: sls
+        severity: warning
+    - alert: SLSStatusCodeNot200High
+      annotations:
+        callUser: Gage
+        description: '最近 1 分钟内的非 200 状态码总计超过 5, 当前值: {{ $value }}'
+        summary: '请求运营商 非 200 状态码过多 (实例: {{ $labels.histogram_name }})'
+      expr: sum_over_time(sls_histogram_query_count{query_tag="status_code_not_200"}[1m])
+        > 5
+      for: 3m
+      labels:
+        category: sls
+        severity: critical
+    - alert: SLSHighLatencyRatio
+      annotations:
+        callUser: Gage
+        description: |
+          检测到 请求运营商耗时 大于 1000毫秒 占比超过 5%，
+          当前比例: {{ $value | printf "%.2f" }}%
+        summary: '请求运营商耗时 >= 1000 比例过高 (实例: {{ $labels.histogram_name }})'
+      expr: |
+        (
+          sum by (project, logstore, histogram_name) (sum_over_time(sls_histogram_query_count{query_tag="cost_gte_1000"}[5m]))
+          /
+          sum by (project, logstore, histogram_name) (sum_over_time(sls_histogram_query_count{query_tag=~"cost.*"}[5m]))
+        ) * 100 > 5
+        and sum by (project, logstore, histogram_name) (sum_over_time(sls_histogram_query_count{query_tag=~"cost.*"}[5m])) > 0
+      for: 2m
+      labels:
+        category: sls
+        severity: warning
+    - alert: SLSHighLatency
+      annotations:
+        callUser: Gage
+        description: |
+          检测到 请求运营商耗时 >= 1000 数量异常激增！最近5分钟错误数: {{ $value }} 次, 大于过去15分钟内峰值
+        summary: '请求运营商耗时 >= 1000 数量 激增(实例: {{ $labels.histogram_name }})'
+      expr: |
+        sum_over_time(sls_histogram_query_count{query_tag="cost_gte_1000"}[5m]) > 50 and
+        (sls_histogram_query_count{query_tag="cost_gte_1000"} > max_over_time(sls_histogram_query_count{query_tag="cost_gte_1000"}[15m]) * 1.05)
+      for: 0m
+      labels:
+        category: sls
+        severity: warning
+    - alert: SLSSlowCall
+      annotations:
+        callUser: Gage
+        description: |
+          检测到 grpc slowcall错误数量异常激增！最近5分钟错误数: {{ $value }} 次, 大于过去15分钟内峰值
+        summary: 'grpc slowcall 错误激增 (实例: {{ $labels.histogram_name }})'
+      expr: |
+        sum_over_time(sls_histogram_query_count{query_tag="slow_call"}[5m]) > 50 and
+        (sls_histogram_query_count{query_tag="slow_call"} > max_over_time(sls_histogram_query_count{query_tag="slow_call"}[15m]) * 1.05)
+      for: 0m
+      labels:
+        category: sls
+        severity: warning

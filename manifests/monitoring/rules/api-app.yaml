@@ -1,0 +1,51 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-app.rules
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: api-app.rules
+      rules:
+        - alert: WalletCenterTrafficRapidDrop
+          # 当前 5 分钟窗口相对前一窗口下降超过 30%，且历史基线足够高才触发。
+          expr: |
+            (
+              sum by (cluster, namespace, service) (
+                rate(rpc_server_requests_duration_ms_count{
+                  namespace="api-center",
+                  service="wallet-center",
+                  method=~"/game\\.GameService/(Bet|Award)"
+                }[5m])
+              )
+              /
+              sum by (cluster, namespace, service) (
+                rate(rpc_server_requests_duration_ms_count{
+                  namespace="api-center",
+                  service="wallet-center",
+                  method=~"/game\\.GameService/(Bet|Award)"
+                }[5m] offset 5m)
+              )
+            ) < 0.70
+            and
+            (
+              sum by (cluster, namespace, service) (
+                rate(rpc_server_requests_duration_ms_count{
+                  namespace="api-center",
+                  service="wallet-center",
+                  method=~"/game\\.GameService/(Bet|Award)"
+                }[5m] offset 5m)
+              ) > 5000
+            )
+          for: 2m
+          keep_firing_for: 5m
+          labels:
+            severity: critical
+            signal: business_qps
+            comparison: short_cliff
+            service: wallet-center
+          annotations:
+            summary: "wallet-center Bet/Award 业务 QPS 短时下降 30%"
+            description: "{{ $labels.namespace }}/{{ $labels.service }} 的 Bet/Award 聚合 QPS 相对前一 5 分钟窗口下降超过 30%，且历史基线高于 5000 req/s。请检查 wallet-center 发布、依赖和实例健康状态。"

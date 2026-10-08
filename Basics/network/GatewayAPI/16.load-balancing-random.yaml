@@ -1,0 +1,96 @@
+# Envoy Gateway 负载均衡
+# Random 随机 负载均衡
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+    service: backend
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: backend
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1
+    spec:
+      serviceAccountName: backend
+      containers:
+        - image: vvoo/demoapp:v1.0
+          imagePullPolicy: IfNotPresent
+          name: backend
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "30Mi"
+            limits:
+              cpu: "20m"
+              memory: "50Mi"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: random-policy
+spec:
+  loadBalancer:
+    type: Random
+  targetRefs:
+    - group: "gateway.networking.k8s.io"
+      kind: HTTPRoute
+      name: random-route
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: random-route
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg
+      namespace: envoy-gateway-system
+  hostnames:
+    - "eg-example.tluapitest.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: backend
+          port: 80

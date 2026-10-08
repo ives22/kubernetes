@@ -1,0 +1,307 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: api-sls.rules
+  namespace: vm
+  labels:
+    # 这个 Label 极其关键，必须跟上面 VMAlert 的 ruleSelector 里的标签一致，否则 vmalert 找不到它
+    vm-alert-rule: "true"
+spec:
+  groups:
+    - name: sls.rules
+      # 可选：如果这一组规则比较耗时，可以在这里单独覆盖全局的评估周期
+      interval: "1m"
+      rules:
+        # # ==========================================
+        # # 1. 客户端日志报错数激增
+        # # ==========================================
+        # - alert: SLSQueryErrorSurge_Client
+        #   # 这里使用的是标准的 PromQL/MetricsQL 语法
+        #   expr: |
+        #     (
+        #       job:sls_error:avg5m{logstore="client-log"} > 3.33
+        #     )
+        #     and
+        #     (
+        #       # 短线突增：15分钟内，报错量突增超过 60% (系数 1.6); 专门抓瞬间垂直破位
+        #       (job:sls_error:avg5m{logstore="client-log"} > job:sls_error:baseline_15m{logstore="client-log"} * 1.6)
+
+        #       or
+
+        #       # 长线兜底：比昨天同一时刻，报错量高出 60% (系数 1.6); 防抖底线，过滤晚高峰爬坡
+        #       (job:sls_error:avg5m{logstore="client-log"} > job:sls_error:baseline_1d{logstore="client-log"} * 1.6)
+        #     )
+        #   for: 2m # 持续 2 分钟超过阈值才触发
+        #   keep_firing_for: 5m # 告警触发后，持续 5 分钟才会自动恢复，避免频繁抖动
+        #   labels:
+        #     severity: warning
+        #     category: sls
+        #   annotations:
+        #     summary: "客户端日志({{ $labels.logstore }})错误数激增"
+        #     callUser: Loya987
+        #     description: "最近5分钟平均每秒错误数为 {{ $value | printf \"%.2f\" }} 条"
+
+        # # ==========================================
+        # # 2. 服务日志报错数激增 Lobby
+        # # ==========================================
+        # - alert: SLSQueryErrorSurge_Lobby
+        #   expr: |
+        #     (
+        #       job:sls_error:avg5m{logstore!~"^(game|web).*|client-log|cronjob"} > 3.33
+        #     )
+        #     and
+        #     (
+        #       # 短线突增：15分钟内，报错量突增超过 40% (系数 1.4); 专门抓瞬间垂直破位
+        #       (
+        #         job:sls_error:avg5m{logstore!~"^(game|web).*|client-log|cronjob"}
+        #         >
+        #         job:sls_error:baseline_15m{logstore!~"^(game|web).*|client-log|cronjob"} * 1.4
+        #       )
+        #       or
+        #       # 长线兜底：比昨天同一时刻，报错量高出 40% (系数 1.4); 防抖底线，过滤晚高峰爬坡
+        #       (
+        #         job:sls_error:avg5m{logstore!~"^(game|web).*|client-log|cronjob"}
+        #         >
+        #         job:sls_error:baseline_1d{logstore!~"^(game|web).*|client-log|cronjob"} * 1.4
+        #       )
+        #     )
+        #   for: 2m # 持续 2 分钟超过阈值才触发
+        #   keep_firing_for: 5m # 告警触发后，持续 5 分钟才会自动恢复，避免频繁抖动
+        #   labels:
+        #     severity: warning
+        #     category: sls
+        #   annotations:
+        #     summary: "服务 [{{ $labels.logstore }}] 日志错误数激增"
+        #     callUser: Gage
+        #     description: "最近5分钟平均每秒错误数为 {{ $value | printf \"%.2f\" }} 条"
+
+        # # ==========================================
+        # # 3. 服务日志报错数激增 Web
+        # # ==========================================
+        # - alert: SLSQueryErrorSurge_Web
+        #   expr: |
+        #     (
+        #       job:sls_error:avg5m{logstore=~"^web.*"} > 3.33
+        #     )
+        #     and
+        #     (
+        #       # 短线突增：15分钟内，报错量突增超过 40% (系数 1.4); 专门抓瞬间垂直破位
+        #       (
+        #         job:sls_error:avg5m{logstore=~"^web.*"}
+        #         >
+        #         job:sls_error:baseline_15m{logstore=~"^web.*"} * 1.4
+        #       )
+        #       or
+        #       # 长线兜底：比昨天同一时刻，报错量高出 40% (系数 1.4); 防抖底线，过滤晚高峰爬坡
+        #       (
+        #         job:sls_error:avg5m{logstore=~"^web.*"}
+        #         >
+        #         job:sls_error:baseline_1d{logstore=~"^web.*"} * 1.4
+        #       )
+        #     )
+        #   for: 2m # 持续 2 分钟超过阈值才触发
+        #   keep_firing_for: 5m # 告警触发后，持续 5 分钟才会自动恢复，避免频繁抖动
+        #   labels:
+        #     severity: warning
+        #     category: sls
+        #   annotations:
+        #     summary: "服务 [{{ $labels.logstore }}] 日志错误数激增"
+        #     callUser: Fraser
+        #     description: "最近5分钟平均每秒错误数为 {{ $value | printf \"%.2f\" }} 条"
+
+        # # ==========================================
+        # # 4. 服务日志报错数激增 Game
+        # # ==========================================
+        # - alert: SLSQueryErrorSurge_Game
+        #   expr: |
+        #     (
+        #       job:sls_error:avg5m{logstore=~"^game.*"} > 3.33
+        #     )
+        #     and
+        #     (
+        #       # 短线突增：15分钟内，报错量突增超过 40% (系数 1.4); 专门抓瞬间垂直破位
+        #       (
+        #         job:sls_error:avg5m{logstore=~"^game.*"}
+        #         >
+        #         job:sls_error:baseline_15m{logstore=~"^game.*"} * 1.4
+        #       )
+        #       or
+        #       # 长线兜底：比昨天同一时刻，报错量高出 40% (系数 1.4); 防抖底线，过滤晚高峰爬坡
+        #       (
+        #         job:sls_error:avg5m{logstore=~"^game.*"}
+        #         >
+        #         job:sls_error:baseline_1d{logstore=~"^game.*"} * 1.4
+        #       )
+        #     )
+        #   for: 2m # 持续 2 分钟超过阈值才触发
+        #   keep_firing_for: 5m # 告警触发后，持续 5 分钟才会自动恢复，避免频繁抖动
+        #   labels:
+        #     severity: warning
+        #     category: sls
+        #   annotations:
+        #     callUser: Pote
+        #     summary: "服务 [{{ $labels.logstore }}] 日志错误数激增"
+        #     description: "最近5分钟平均每秒错误数为 {{ $value | printf \"%.2f\" }} 条"
+
+        # ==========================================
+        # 5. 客户端日志最近 5 分钟错误总数激增
+        # ==========================================
+        - alert: SLSQueryErrorCount5mSurge_Client
+          expr: |
+            (
+              job:sls_error:count5m{logstore="client-log"} > 1000
+            )
+            and
+            (
+              (job:sls_error:count5m{logstore="client-log"} > job:sls_error:count5m_baseline_15m{logstore="client-log"} * 1.6)
+              or
+              (job:sls_error:count5m{logstore="client-log"} > job:sls_error:count5m_baseline_1d{logstore="client-log"} * 1.6)
+            )
+          for: 2m
+          keep_firing_for: 5m
+          labels:
+            severity: warning
+            category: sls
+          annotations:
+            summary: "客户端日志({{ $labels.logstore }})最近5分钟错误总数激增"
+            callUser: Loya987
+            description: "最近5分钟错误总数为 {{ $value | printf \"%.0f\" }} 条"
+
+        # ==========================================
+        # 6. 服务日志最近 5 分钟错误总数激增 Lobby
+        # ==========================================
+        - alert: SLSQueryErrorCount5mSurge_Lobby
+          expr: |
+            (
+              job:sls_error:count5m{logstore!~"^(game|web).*|client-log|cronjob"} > 1000
+            )
+            and
+            (
+              (
+                job:sls_error:count5m{logstore!~"^(game|web).*|client-log|cronjob"}
+                >
+                job:sls_error:count5m_baseline_15m{logstore!~"^(game|web).*|client-log|cronjob"} * 1.4
+              )
+              or
+              (
+                job:sls_error:count5m{logstore!~"^(game|web).*|client-log|cronjob"}
+                >
+                job:sls_error:count5m_baseline_1d{logstore!~"^(game|web).*|client-log|cronjob"} * 1.4
+              )
+            )
+          for: 2m
+          keep_firing_for: 5m
+          labels:
+            severity: warning
+            category: sls
+          annotations:
+            summary: "服务 [{{ $labels.logstore }}] 最近5分钟错误总数激增"
+            callUser: Gage
+            description: "最近5分钟错误总数为 {{ $value | printf \"%.0f\" }} 条"
+
+        # ==========================================
+        # 7. 服务日志最近 5 分钟错误总数激增 Web
+        # ==========================================
+        - alert: SLSQueryErrorCount5mSurge_Web
+          expr: |
+            (
+              job:sls_error:count5m{logstore=~"^web.*"} > 1000
+            )
+            and
+            (
+              (
+                job:sls_error:count5m{logstore=~"^web.*"}
+                >
+                job:sls_error:count5m_baseline_15m{logstore=~"^web.*"} * 1.4
+              )
+              or
+              (
+                job:sls_error:count5m{logstore=~"^web.*"}
+                >
+                job:sls_error:count5m_baseline_1d{logstore=~"^web.*"} * 1.4
+              )
+            )
+          for: 2m
+          keep_firing_for: 5m
+          labels:
+            severity: warning
+            category: sls
+          annotations:
+            summary: "服务 [{{ $labels.logstore }}] 最近5分钟错误总数激增"
+            callUser: Fraser
+            description: "最近5分钟错误总数为 {{ $value | printf \"%.0f\" }} 条"
+
+        # ==========================================
+        # 8. 服务日志最近 5 分钟错误总数激增 Game
+        # ==========================================
+        - alert: SLSQueryErrorCount5mSurge_Game
+          expr: |
+            (
+              job:sls_error:count5m{logstore=~"^game.*"} > 1000
+            )
+            and
+            (
+              (
+                job:sls_error:count5m{logstore=~"^game.*"}
+                >
+                job:sls_error:count5m_baseline_15m{logstore=~"^game.*"} * 1.4
+              )
+              or
+              (
+                job:sls_error:count5m{logstore=~"^game.*"}
+                >
+                job:sls_error:count5m_baseline_1d{logstore=~"^game.*"} * 1.4
+              )
+            )
+          for: 2m
+          keep_firing_for: 5m
+          labels:
+            severity: warning
+            category: sls
+          annotations:
+            callUser: Pote
+            summary: "服务 [{{ $labels.logstore }}] 最近5分钟错误总数激增"
+            description: "最近5分钟错误总数为 {{ $value | printf \"%.0f\" }} 条"
+
+        # ==========================================
+        # 9. cronjob 执行失败 Game
+        # ==========================================
+        - alert: SLSCronjobExecFaild
+          expr: |
+            (max_over_time(sls_metrics_collector_log_count{query_tag="error", logstore="cronjob"}[1m]) > 0)
+          for: 0m
+          keep_firing_for: 5m
+          labels:
+            severity: warning
+            category: sls
+          annotations:
+            callUser: Gage
+            summary: "cronjob 执行失败"
+            description: "cronjob 执行失败, 请通过sls控制台查询具体错误信息"
+
+        # ==========================================
+        # 10. 回调运营商大量失败
+        # ==========================================
+        - alert: CallbackOperatorFailed_5xx
+          expr: sum_over_time(sls_metrics_collector_log_count{logstore="ext_request_log",query_tag="status_code_5xx"}[1m]) > 5
+          for: 2m
+          keep_firing_for: 5m
+          labels:
+            severity: warning
+            category: sls
+          annotations:
+            callUser: Gage
+            summary: "回调运营商接口大量失败, 最近1分钟出现 {{ $value }} 次错误"
+            description: "最近1分钟回调运营商接口大量失败, 大量状态码为5xx的请求失败, 请及时和运营商沟通排查问题, 并通过sls控制台查询具体错误信息"
+
+        - alert: CallbackOperatorFailed_599
+          expr: sum_over_time(sls_metrics_collector_log_count{logstore="ext_request_log",query_tag="status_code_599"}[1m]) > 5
+          for: 2m
+          keep_firing_for: 5m
+          labels:
+            severity: warning
+            category: sls
+          annotations:
+            callUser: Gage
+            summary: "回调运营商接口大量失败, 最近1分钟出现 {{ $value }} 次错误"
+            description: "最近1分钟回调运营商接口大量超时, 大量状态码为599的请求失败, 请通过sls控制台查询具体错误信息"

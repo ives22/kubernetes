@@ -1,0 +1,8 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  # envoy gatewayay的控制器名称可以通过 kubectl get cm -n envoy-gateway-system envoy-gateway-config -oyaml 获取
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+

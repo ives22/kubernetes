@@ -1,0 +1,55 @@
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: api-sls-recording.rules
+  namespace: vm
+  labels:
+    # 这个 Label 极其关键，必须跟上面 VMAlert 的 ruleSelector 里的标签一致，否则 vmalert 找不到它
+    vm-alert-rule: "true"
+spec:
+  groups:
+  - name: sls_error_recording_rules
+    interval: 30s
+    rules:
+      # 1. 当前 5 分钟平均每秒错误数 (按 logstore 聚合)
+      # 只要原始指标带有 logstore 标签，这里就会自动为每个 logstore 生成一条时间序列
+      - record: job:sls_error:avg5m
+        expr: |
+          sum by (project,logstore) (
+            avg_over_time(sls_metrics_collector_log_count{query_tag="error"}[5m])
+          )
+
+      # 2. 15 分钟前的平均每秒基线 (短线对比用)
+      - record: job:sls_error:baseline_15m
+        expr: |
+          sum by (project,logstore) (
+            avg_over_time(sls_metrics_collector_log_count{query_tag="error"}[5m] offset 15m)
+          )
+
+      # 3. 昨天同刻的平均每秒基线 (长线对比用)
+      - record: job:sls_error:baseline_1d
+        expr: |
+          sum by (project,logstore) (
+            avg_over_time(sls_metrics_collector_log_count{query_tag="error"}[5m] offset 1d)
+          )
+
+      # 4. 当前 5 分钟错误总数 (按 logstore 聚合)
+      - record: job:sls_error:count5m
+        expr: |
+          sum by (project,logstore) (
+            sum_over_time(sls_metrics_collector_log_count{query_tag="error"}[5m])
+          )
+
+      # 5. 15 分钟前的 5 分钟错误总数基线
+      - record: job:sls_error:count5m_baseline_15m
+        expr: |
+          sum by (project,logstore) (
+            sum_over_time(sls_metrics_collector_log_count{query_tag="error"}[5m] offset 15m)
+          )
+
+      # 6. 昨天同刻的 5 分钟错误总数基线
+      - record: job:sls_error:count5m_baseline_1d
+        expr: |
+          sum by (project,logstore) (
+            sum_over_time(sls_metrics_collector_log_count{query_tag="error"}[5m] offset 1d)
+          )

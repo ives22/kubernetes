@@ -1,0 +1,106 @@
+# Envoy Gateway Local Rate Limit 本地速率限制
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+    service: backend
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: backend
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1
+    spec:
+      serviceAccountName: backend
+      containers:
+        - image: vvoo/demoapp:v1.0
+          imagePullPolicy: IfNotPresent
+          name: backend
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "30Mi"
+            limits:
+              cpu: "20m"
+              memory: "50Mi"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy 
+metadata:
+  name: policy-httproute
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: http-ratelimit
+  rateLimit:
+    local:
+      rules:
+      - clientSelectors:
+        - headers:
+          - name: x-user-id
+            value: one
+        limit:
+          requests: 3
+          unit: Hour
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-ratelimit
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg
+      namespace: envoy-gateway-system
+  hostnames:
+    - "eg-example.tluapitest.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: backend
+          port: 80
+
+# 这里 gateway 是 2 副本
+# 让对 eg-example.tluapitest.com 进行 7 次查询。前 6 次请求应该会从示例网关收到 200 响应，而第 7 次请求会收到 429 状态码，因为对于包含 x-user-id 标头的请求，每小时的请求次数限制为 3 次。 并重视 one 。

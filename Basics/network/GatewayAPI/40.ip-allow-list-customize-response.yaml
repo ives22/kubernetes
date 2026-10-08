@@ -1,0 +1,125 @@
+# IP 允许列表 （白名单） 自定义响应内容
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+    service: backend
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1
+    spec:
+      serviceAccountName: backend
+      containers:
+        - image: vvoo/demoapp:v1.0
+          imagePullPolicy: IfNotPresent
+          name: backend
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "30Mi"
+            limits:
+              cpu: "20m"
+              memory: "50Mi"
+
+---
+########## 创建安全策略 ##########
+# 下面策略表示只允许特定 IP 访问
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: authorization-client-ip-allow-list
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: backend
+  authorization:
+    defaultAction: Deny
+    rules:
+      - name: allow-list
+        action: Allow
+        principal:
+          clientCIDRs: 
+            - 57.182.245.13/32
+---
+########## 创建自定义响应内容 ##########
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: ip-deny-response
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: backend
+  responseOverride:
+    - match:
+        statusCodes:
+          - type: Value
+            value: 403
+      source: Local
+      response:
+        statusCode: 403
+        contentType: application/json
+        body:
+          type: Inline
+          inline: '{"code":"IP_NOT_ALLOWED","message":"当前来源 IP 不在访问白名单中"}'
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backend
+spec:
+  hostnames:
+    - "eg-example.tluapitest.com"
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: eg
+      namespace: envoy-gateway-system
+  rules:
+    - backendRefs:
+      - group: ""
+        kind: Service
+        name: backend
+        port: 80
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+
+
+# 使用允许的 IP 访问 可以正常访问，使用其它IP 访问会被拒绝 并提示： {"code":"IP_NOT_ALLOWED","message":"当前来源 IP 不在访问白名单中"}
+#  curl -v --header "Host: eg-example.tluapitest.com" http://eg-example.tluapitest.com/
+
